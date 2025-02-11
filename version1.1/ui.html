@@ -1,0 +1,203 @@
+<!-- index.html -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>⑨数字表达式求解器</title>
+    <style>
+        :root {
+            --glass-bg: rgba(255, 255, 255, 0.1);
+            --glass-border: rgba(255, 255, 255, 0.2);
+            --blur: blur(10px);
+        }
+
+        body {
+            min-height: 100vh;
+            margin: 0;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            background: linear-gradient(45deg, #ff6b6b, #4ecdc4);
+            font-family: 'Segoe UI', sans-serif;
+        }
+
+        .container {
+            background: var(--glass-bg);
+            backdrop-filter: var(--blur);
+            border-radius: 20px;
+            padding: 2rem;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+            border: 1px solid var(--glass-border);
+            width: 80%;
+            max-width: 600px;
+        }
+
+        .input-group {
+            margin: 1rem 0;
+        }
+
+        input {
+            width: 100%;
+            padding: 12px 20px;
+            border-radius: 50px;
+            border: none;
+            background: var(--glass-bg);
+            backdrop-filter: var(--blur);
+            color: white;
+            font-size: 1.2rem;
+        }
+
+        .buttons {
+            display: flex;
+            gap: 1rem;
+            margin-top: 1rem;
+        }
+
+        button {
+            flex: 1;
+            padding: 12px;
+            border: none;
+            border-radius: 50px;
+            background: var(--glass-bg);
+            backdrop-filter: var(--blur);
+            color: white;
+            cursor: pointer;
+            transition: 0.3s;
+        }
+
+        button:hover {
+            background: rgba(255, 255, 255, 0.2);
+        }
+
+        .output {
+            margin-top: 1rem;
+            padding: 1rem;
+            border-radius: 10px;
+            background: var(--glass-bg);
+            min-height: 100px;
+            color: white;
+            white-space: pre-wrap;
+        }
+
+        .loading {
+            position: relative;
+            overflow: hidden;
+        }
+
+        .loading::after {
+            content: "";
+            position: absolute;
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(
+                90deg,
+                transparent,
+                rgba(255, 255, 255, 0.2),
+                transparent
+            );
+            animation: loading 1.5s infinite;
+        }
+
+        @keyframes loading {
+            0% { transform: translateX(-100%); }
+            100% { transform: translateX(100%); }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>⑨数字表达式求解器</h1>
+        <div class="input-group">
+            <input type="number" id="targetInput" placeholder="输入目标整数">
+        </div>
+        <div class="buttons">
+            <button onclick="startCalculation()">开始计算</button>
+            <button onclick="cancelCalculation()" id="cancelBtn" disabled>中断搜索</button>
+        </div>
+        <div id="confirmButtons" class="buttons" style="display: none;">
+            <button onclick="handleConfirm(true)">是</button>
+            <button onclick="handleConfirm(false)">否</button>
+        </div>
+        <div id="output" class="output"></div>
+    </div>
+
+    <script>
+        let isWaitingConfirm = false;
+        let currentRequestId = 0;
+
+        function updateOutput(text, isError = false) {
+            const output = document.getElementById('output');
+            output.innerHTML = text;
+            output.style.color = isError ? '#ff6b6b' : 'white';
+        }
+
+        async function startCalculation() {
+            const target = document.getElementById('targetInput').value;
+            if (!target) return;
+
+            currentRequestId++;
+            document.getElementById('cancelBtn').disabled = false;
+            updateOutput('搜索中...');
+
+            try {
+                const response = await fetch('/calculate', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({target: parseInt(target)})
+                });
+
+                const data = await response.json();
+                if (data.status !== 'started') return;
+
+                checkStatus();
+            } catch (error) {
+                updateOutput('连接服务器失败', true);
+            }
+        }
+
+        async function checkStatus() {
+            try {
+                const response = await fetch('/status');
+                const data = await response.json();
+
+                if (data.status === 'completed') {
+                    handleResult(data.result);
+                } else if (data.status === 'running') {
+                    setTimeout(checkStatus, 500);
+                }
+            } catch (error) {
+                updateOutput('状态检查失败', true);
+            }
+        }
+
+        function handleResult(result) {
+            if (result.includes('是否解除时间限制重新尝试')) {
+                isWaitingConfirm = true;
+                document.getElementById('confirmButtons').style.display = 'flex';
+                updateOutput(result);
+            } else {
+                document.getElementById('cancelBtn').disabled = true;
+                updateOutput(result);
+            }
+        }
+
+        async function handleConfirm(confirmed) {
+            document.getElementById('confirmButtons').style.display = 'none';
+            if (confirmed) {
+                updateOutput('正在尝试深度搜索...');
+                startCalculation();
+            }
+        }
+
+        async function cancelCalculation() {
+            try {
+                await fetch('/cancel', {method: 'POST'});
+                updateOutput('搜索已中断');
+                document.getElementById('cancelBtn').disabled = true;
+            } catch (error) {
+                updateOutput('中断请求失败', true);
+            }
+        }
+    </script>
+</body>
+</html>
