@@ -5,8 +5,6 @@
 <img title="" src="https://s3.bmp.ovh/imgs/2025/02/12/82641ee40331811a.png" alt="" width="369"> 
 （运行截图）
 
-
-
 ## 📖 项目简介
 
 灵感起源
@@ -22,8 +20,6 @@
 print("示例：108 = ⑨⑨ + ⑨")  # 实际输出会根据算法动态生成
 ```
 
-## 
-
 ## 🧩 池沼对比
 
 | 功能   | 本项目      | Homo论证器 |
@@ -34,8 +30,6 @@ print("示例：108 = ⑨⑨ + ⑨")  # 实际输出会根据算法动态生成
 | 音频反馈 | ⑨のbaka音效 | 无       |
 | 算法目标 | 最优解搜索    | 数字推理    |
 
-## 
-
 ## ✨ 核心特性
 
 - **⑨的完美运算**：仅使用9/99/999进行四则运算
@@ -45,9 +39,7 @@ print("示例：108 = ⑨⑨ + ⑨")  # 实际输出会根据算法动态生成
   - 动态进度提示
   - 任意键中断搜索
   - 音频反馈（需要音频设备支持）
-  - ⑨
-
-## 
+  - ⑨ 
 
 ## 📦 版本说明
 
@@ -55,8 +47,6 @@ print("示例：108 = ⑨⑨ + ⑨")  # 实际输出会根据算法动态生成
 | ---- | ------------------------- | --- | ----- |
 | 命令行版 | `version1.1/main.py`      | 稳定  | ⭐⭐⭐⭐⭐ |
 | GUI版 | `GUI_Version/main_gui.py` | 摆烂中 | ⭐     |
-
-## 
 
 ## 🛠️ 快速开始
 
@@ -86,10 +76,8 @@ python main.py
 请输入目标整数: 108
 结果 (0.23s):
 108 = ⑨⑨ + ⑨
-baka~
+baka~ 
 ```
-
-## 
 
 ## 📂 项目结构
 
@@ -101,10 +89,8 @@ baka~
 │   └── Audio_coding.py    # 音频编码模块
 └── GUI_Version/           # 实验性GUI
     ├── main_gui.py        # 后端
-    └── gui.py             # 前端                  
+    └── gui.py             # 前端                   
 ```
-
-## 
 
 ## 🧠 算法亮点
 
@@ -117,17 +103,13 @@ class ImprovedNineExpressionFinder:
     def _find_expression_with_timeout(self):
         # 动态运算符优先级
         # 智能剪枝策略
-        # 跨平台中断检测 
+        # 跨平台中断检测  
 ```
-
-## 
 
 ## ⚠️ 注意事项
 
 - 大数字（>10^4）可能需要更长时间
-- 音频播放依赖系统解码器
-
-## 
+- 音频播放依赖系统解码器 
 
 ## 🤝 贡献指南
 
@@ -136,32 +118,22 @@ class ImprovedNineExpressionFinder:
 - 使用类型注解
 - 尽量保持docstring规范
 
-**~~以及大佬们带带我，我啥也不会，只会面向ai编程😭~~**
-
-## 
+**~~以及大佬们带带我，我啥也不会，只会面向ai编程😭~~** 
 
 ## 📜 许可证
 
-   [MIT License](LICENSE) 
-
-## 
+   [MIT License](LICENSE)  
 
 ## 🌟 特别致谢
 
 - [homo数字论证器](https://github.com/itorr/homo) 提供灵感启发
-- FinaleDreamilyNeko的暴论（bushi
-
-## 
+- FinaleDreamilyNeko的暴论（bushi 
 
 ## **🔗 相关链接**
 
 - [homo数字论证器在线版](https://lab.magiconch.com/homo/)
-- [【经典回顾】东方数学小课堂：琪露诺的完美算术教室](https://www.bilibili.com/video/BV1rs41197Xn)
-
-##### 
+- [【经典回顾】东方数学小课堂：琪露诺的完美算术教室](https://www.bilibili.com/video/BV1rs41197Xn) 
 
 ##### **⑨是最强的！** 本项目的所有运算都经过⑨的严格验证，保证⑨⑨%正确！✨
-
-
 
 > 提示：遇到卡顿时大喊"baka"可能会提升运算速度哦~ ❄️
