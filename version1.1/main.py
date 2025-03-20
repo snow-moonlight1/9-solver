@@ -32,6 +32,10 @@ class Expression:
     expr: str
     operators_used: set
     operator: Optional[str] = None
+    priority: int = 0
+
+    def __lt__(self, other):
+        return self.priority < other.priority
 
     def __hash__(self):
         return hash(self.value)
@@ -355,11 +359,10 @@ class ImprovedNineExpressionFinder:
             visited.add(exp.value)
 
         while queue and (time.time() - start_time) * 1000 < timeout_ms:
-            queue.sort(key=lambda x: (
-                x[0] * (0.8 if '*' in x[1].operators_used else 1),
-                -self._diversity_score(x[1].operators_used)
-            ))
-            _, current_exp = queue.pop(0)
+            import heapq
+            # 使用堆结构优化优先级队列
+            heapq.heapify(queue)
+            current_priority, current_exp = heapq.heappop(queue)
 
             if self._is_integer(current_exp.value) and round(current_exp.value) == target:
                 result = self._simplify_expression(current_exp.expr)
