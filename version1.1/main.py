@@ -544,7 +544,7 @@ class ImprovedNineExpressionFinder:
                 print("\n检测到按键，中断搜索")
                 print("\033[38;2;1;101;204mcirno\033[0m下次一定会算出来的！")
                 print("琪露诺才不是baka！")
-                return " "  # 或者直接退出程序，比如调用 sys.exit(0)
+                return ""  # 或者直接退出程序，比如调用 sys.exit(0)
 
             queue.sort(key=lambda x: (
                 x[0] * (0.8 if '*' in x[1].operators_used else 1),
@@ -628,7 +628,7 @@ class ImprovedNineExpressionFinder:
             return self._find_expression_without_timeout(target)
         else:
             print("好的,请在下方输入目标整数")
-            return " "
+            return ""
 
 
 def main():
@@ -647,8 +647,8 @@ def main():
             target = int(user_input)
             start = time.time()
             expr = finder.find_expression(target)
-            # 如果返回的结果既不是 " " 也不是用户中断的提示，则打印结果和 baka~
-            if expr not in [" ", "搜索已中断，返回主菜单。", "搜索已中断"]:
+            # 如果返回的结果既不是 "" 也不是用户中断的提示，则打印结果和 baka~
+            if expr not in ["", "搜索已中断，返回主菜单。", "搜索已中断"]:
                 print(f"\n结果 ({time.time() - start:.2f}s):")
                 print(f"{target} = {expr}")
                 # 使用 ANSI 转义码设置文字颜色为 #0165cc（RGB: 1,101,204），打印 "baka~"
