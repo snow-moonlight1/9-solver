@@ -10,6 +10,7 @@ import wave
 import pyaudio
 import io
 import base64
+import threading
 sys.stdout.reconfigure(encoding='utf-8')
 
 @dataclass
@@ -42,6 +43,10 @@ class ImprovedNineExpressionFinder:
         self.expression_cache = {k: v.replace('9', '⑨ ') for k, v in self.expression_cache.items()}
         
     def play_baka_sound(self):
+        thread = threading.Thread(target=self._play_audio, daemon=True)
+        thread.start()
+
+    def _play_audio(self):
         try:
             # 解码 base64 音频数据
             audio_binary = base64.b64decode(self.AUDIO_DATA)
