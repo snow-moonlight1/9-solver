@@ -30,16 +30,14 @@ class Expression:
 
 class ImprovedNineExpressionFinder:
     def __init__(self):
-        self._disable_divisions = False  # 新增属性
+        self._disable_divisions = False
         self.base_numbers = {9, 99, 999}
         from audio_data import AUDIO_DATA
         self.AUDIO_DATA = AUDIO_DATA
         self.large_number_threshold = 5000  # 大数阈值
         from expression_cache import EXPRESSION_CACHE
         self.expression_cache = EXPRESSION_CACHE
-        self.precompute_range = range(1, 101)
         self.max_line_length = 60  # 调整行长度
-        self._precompute_common_results()
         # 将缓存中的表达式转换为符号形式
         self.expression_cache = {k: v.replace('9', '⑨ ') for k, v in self.expression_cache.items()}
         
@@ -185,20 +183,6 @@ class ImprovedNineExpressionFinder:
             return Expression(value, expr, new_operators_used, operator=operator)
         except:
             return None
-
-    def _precompute_common_results(self):
-        print("预计算常用结果中...")
-        # 先处理高频数字
-        priority_targets = [k for k in self.expression_cache if 1 <= k <= 1000]
-        for target in priority_targets:
-            if target not in self.expression_cache:
-                self._find_expression_with_timeout(target, timeout_ms=500)
-
-        # 补充计算其他预定义范围
-        for i in self.precompute_range:
-            if i not in self.expression_cache:
-                self._find_expression_with_timeout(i, timeout_ms=100)
-        print("预计算完成！")
 
     def _decompose_large_number(self, target: int) -> Optional[str]:
         """根据数字大小动态选择分解策略"""
