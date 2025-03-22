@@ -405,46 +405,70 @@ class ImprovedNineExpressionFinder:
         print("预计算完成！")
 
     def _decompose_large_number(self, target: int) -> Optional[str]:
-        """对大数进行分解，先用基础数进行主要分解，再对剩余小数进行优化分解"""
-        if target <= self.large_number_threshold:
+        """根据数字大小动态选择分解策略"""
+        # 对于较小的数字，尝试使用更简单的组合
+        if target < 1000:
+            # 尝试用99和9的组合
+            for base in [99, 9]:
+                quotient = target // base
+                remainder = target % base
+                if quotient > 0:
+                    quotient_expr = self._find_expression_with_timeout(quotient, timeout_ms=300)
+                    if quotient_expr:
+                        if remainder == 0:
+                            return f"{base}*({quotient_expr})"
+                        remainder_expr = self._find_expression_with_timeout(remainder, timeout_ms=300)
+                        if remainder_expr:
+                            return f"{base}*({quotient_expr})+({remainder_expr})"
             return None
+
+        # 对于中等大小的数字，优先尝试99和9的组合
+        if target < self.large_number_threshold:
+            # 先尝试99
+            quotient = target // 99
+            remainder = target % 99
+            if quotient > 0:
+                quotient_expr = self._find_expression_with_timeout(quotient, timeout_ms=300)
+                if quotient_expr:
+                    if remainder == 0:
+                        return f"99*({quotient_expr})"
+                    remainder_expr = self._find_expression_with_timeout(remainder, timeout_ms=300)
+                    if remainder_expr:
+                        return f"99*({quotient_expr})+({remainder_expr})"
             
-        # 尝试用999进行分解
+            # 再尝试9
+            quotient = target // 9
+            remainder = target % 9
+            if quotient > 0:
+                quotient_expr = self._find_expression_with_timeout(quotient, timeout_ms=300)
+                if quotient_expr:
+                    if remainder == 0:
+                        return f"9*({quotient_expr})"
+                    remainder_expr = self._find_expression_with_timeout(remainder, timeout_ms=300)
+                    if remainder_expr:
+                        return f"9*({quotient_expr})+({remainder_expr})"
+
+        # 对于大数，优先使用999
         quotient = target // 999
         remainder = target % 999
-        
         if quotient > 0:
-            # 先处理商
-            quotient_expr = self._find_expression_with_timeout(quotient, timeout_ms=500)
+            quotient_expr = self._find_expression_with_timeout(quotient, timeout_ms=300)
             if quotient_expr:
                 if remainder == 0:
                     return f"999*({quotient_expr})"
-                # 处理余数
-                remainder_expr = self._find_expression_with_timeout(remainder, timeout_ms=500)
+                remainder_expr = self._find_expression_with_timeout(remainder, timeout_ms=300)
                 if remainder_expr:
                     return f"999*({quotient_expr})+({remainder_expr})"
         
-        # 尝试用其他基础数组合
-        for base in [99, 9]:
-            quotient = target // base
-            remainder = target % base
-            if quotient > 0:
-                quotient_expr = self._find_expression_with_timeout(quotient, timeout_ms=500)
-                if quotient_expr:
-                    if remainder == 0:
-                        return f"{base}*({quotient_expr})"
-                    remainder_expr = self._find_expression_with_timeout(remainder, timeout_ms=500)
-                    if remainder_expr:
-                        return f"{base}*({quotient_expr})+({remainder_expr})"
-        
+        # 如果所有尝试都失败，返回None
         return None
 
     def _find_expression_with_timeout(self, target: int, timeout_ms: int = 1000) -> Optional[str]:
-        # 检查是否是大数，如果是则尝试分解
-        large_number_expr = self._decompose_large_number(target)
-        if large_number_expr:
-            return large_number_expr
+        # 对于大数直接使用分解策略
+        if target > 5000:
+            return self._decompose_large_number(target)
             
+        # 首先尝试启发式搜索
         # 数学约束预判
         self._disable_divisions = False
         if target % 9 != 0:  # 不能被9整除时禁用除以9的操作
@@ -501,6 +525,11 @@ class ImprovedNineExpressionFinder:
                             queue.append((self._estimate_distance(reverse_result.value, target), reverse_result))
                             visited.add(reverse_result.value)
 
+        # 如果启发式搜索失败，尝试大数分解
+        large_number_expr = self._decompose_large_number(target)
+        if large_number_expr:
+            return large_number_expr
+            
         return None
 
     def _find_best_split_pos(self, tokens: list) -> int:
