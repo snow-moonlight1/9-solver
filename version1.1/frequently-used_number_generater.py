@@ -11,23 +11,23 @@ class CombinationGenerator:
         self.special_values = {1000, 2000, 5000, 10000}
         self.priority_ops = ['*', '+', '-', '/']  # 新增运算符优先级实例变量
 
-    def _precompute_special_values(self):
-        """为特殊数值生成快速通道组合"""
-        special_combinations = {
-            1000: [('999+9', 1008), ('99*9', 891)],
-            2000: [('999*2', 1998), ('99*20', 1980)],
-            5000: [('999*5', 4995), ('99*50', 4950)],
-            10000: [('999*10', 9990), ('99*101', 9999)]
-        }
-
-        # 调整运算符优先级顺序：乘法 > 加法 > 减法 > 除法
-        
-        for target, bases in special_combinations.items():
-            for expr, base_val in bases:
-                for op in self.priority_ops:
-                    result = self._evaluate(base_val, 9, op)
-                    if result and abs(result - target) < 50:
-                        self.combinations[result].append(f'({expr}){op}9')
+    def _generate_base_combinations(self):
+        """生成基础数字的组合"""
+        for a in self.base:
+            for b in self.base:
+                for op in self.operators:
+                    res = self._evaluate(a, b, op)
+                    if res is not None and abs(res) < 50_000:
+                        expr = f"{a}{op}{b}"
+                        self.combinations[res].append(expr)
+                        
+                        # 尝试与第三个基础数进行组合
+                        for c in self.base:
+                            for op2 in self.operators:
+                                final_res = self._evaluate(res, c, op2)
+                                if final_res is not None and abs(final_res) < 100_000:
+                                    final_expr = f"({expr}){op2}{c}"
+                                    self.combinations[final_res].append(final_expr)
 
     def _evaluate(self, a, b, op):
         try:
@@ -35,41 +35,17 @@ class CombinationGenerator:
             if op == '-': return a - b
             if op == '*': return a * b
             if op == '/':
-                if b == 0 or a % b != 0:
+                if b == 0:
                     return None
-                return a // b
+                return a / b
             return None
         except:
             return None
 
     def generate(self):
-        # 预处理特殊数值
-        self._precompute_special_values()
+        # 生成基础组合
+        self._generate_base_combinations()
         
-        # 单步运算组合（优化排列方式）
-        perm_cache = set()
-        for a, b in itertools.permutations(self.base, 2):
-            if (a, b) not in perm_cache:
-                perm_cache.add((a, b))
-                for op in self.operators:
-                    res = self._evaluate(a, b, op)
-                    if res is not None and (abs(res) < 50_000 or res in self.special_values):
-                        expr = f"{a}{op}{b}"
-                        self.combinations[res].append(expr)
-
-        # 两步运算组合（动态剪枝策略）
-        temp = {k: v for k, v in self.combinations.items() if k < 10_000 or k in self.special_values}
-        for val in sorted(temp.keys(), key=lambda x: -abs(x)):  # 按数值大小倒序处理
-            for base in sorted(self.base, reverse=True):
-                for op in self.priority_ops:  # 使用实例变量中的运算符优先级
-                    res = self._evaluate(val, base, op)
-                    if res and (abs(res) < 100_000 or res in self.special_values):
-                        for expr in temp[val]:
-                            new_expr = f"({expr}){op}{base}"
-                            # 表达式复杂度控制（限制嵌套层数）
-                            if new_expr.count('(') < 3:
-                                self.combinations[res].append(new_expr)
-
         # 去重并保留最短表达式
         final = {}
         for k in self.combinations:
