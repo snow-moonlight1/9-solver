@@ -186,6 +186,13 @@ class ImprovedNineExpressionFinder:
 
     def _decompose_large_number(self, target: int) -> Optional[str]:
         """根据数字大小动态选择分解策略"""
+        # 负数处理分支
+        if target < 0:
+            positive_expr = self._decompose_large_number(-target)
+            if positive_expr:
+                return f"-({positive_expr})"
+            return None
+
         # 对于较小的数字，尝试使用更简单的组合
         if target < 1000:
             # 尝试用99和9的组合
@@ -260,9 +267,9 @@ class ImprovedNineExpressionFinder:
         return None
 
     def _find_expression_with_timeout(self, target: int, timeout_ms: int = 1000) -> Optional[str]:
-        # 对于大数直接使用分解策略
-        if target > 5000:
-            return self._decompose_large_number(target)  
+        # 对于大数绝对值直接使用分解策略
+        if abs(target) > 5000:
+            return self._decompose_large_number(target)
         # 首先尝试启发式搜索
         # 数学约束预判
         self._disable_divisions = False
@@ -346,19 +353,30 @@ class ImprovedNineExpressionFinder:
         if len(expr) <= self.max_line_length:
             return expr
 
-        tokens = re.findall(r'(\d+|\(|\)|\+|\|\*|\|)', expr)
-        tokens = [t for t in tokens if t]
+        # 改进的正则表达式，正确识别所有运算符和数字
+        tokens = re.findall(r'(\d+|\(|\)|\+|\-|\*|\/|\⑨\s*)', expr)
+        tokens = [t for t in tokens if t.strip()]
         lines = []
         current_line = []
         current_length = 0
 
         for i, token in enumerate(tokens):
+            token = token.strip()
             new_length = current_length + len(token) + (1 if current_line else 0)
 
-            # 长数字预判换行
-            if len(token) > 4 and current_length > self.max_line_length // 2:
-                self._split_line(current_line, lines)
-                current_length = 0
+            # 长数字预判换行，同时考虑运算符
+            if (len(token) > 4 or token in {'*', '/'}) and current_length > self.max_line_length // 2:
+                if current_line:
+                    split_pos = self._find_best_split_pos(current_line)
+                    if split_pos != -1:
+                        head = current_line[:split_pos + 1]
+                        tail = current_line[split_pos + 1:]
+                        lines.append(''.join(head))
+                        current_line = tail
+                        current_length = sum(len(t) for t in tail)
+                    else:
+                        self._split_line(current_line, lines)
+                        current_length = 0
 
             if new_length > self.max_line_length:
                 split_pos = self._find_best_split_pos(current_line)
@@ -367,7 +385,7 @@ class ImprovedNineExpressionFinder:
                     tail = current_line[split_pos + 1:]
                     lines.append(''.join(head))
                     current_line = tail
-                    current_length = sum(len(t) for t in tail) + len(tail) - 1
+                    current_length = sum(len(t) for t in tail)
                 else:
                     self._split_line(current_line, lines)
                     current_length = 0
@@ -375,11 +393,20 @@ class ImprovedNineExpressionFinder:
             current_line.append(token)
             current_length += len(token) + (1 if current_line else 0)
 
-        self._split_line(current_line, lines)
+        if current_line:
+            self._split_line(current_line, lines)
+
+        # 优化换行后的格式
+        if not lines:
+            return expr
 
         wrapped = lines[0]
         for line in lines[1:]:
-            wrapped += '\n    ' + line.lstrip('+-*/').lstrip()
+            # 确保运算符在行首时正确对齐
+            if line[0] in {'+', '-', '*', '/'}:
+                wrapped += '\n    ' + line
+            else:
+                wrapped += '\n    ' + line.lstrip()
         return wrapped
 
     def find_expression(self, target: int) -> str:
