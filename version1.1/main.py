@@ -10,18 +10,6 @@ import wave
 import pyaudio
 import io
 import base64
-try:
-    import msvcrt  # Windows 系统可用
-except ImportError:
-    msvcrt = None
-
-if sys.platform != 'win32':
-    import tty
-    import termios
-else:
-    tty = None
-    termios = None
-
 sys.stdout.reconfigure(encoding='utf-8')
 
 @dataclass
@@ -54,35 +42,7 @@ class ImprovedNineExpressionFinder:
         self._precompute_common_results()
         # 将缓存中的表达式转换为符号形式
         self.expression_cache = {k: v.replace('9', '⑨ ') for k, v in self.expression_cache.items()}
-
-    def _user_wants_to_abort(self) -> bool | None:
-        """
-        检测用户是否按下任意键以中断搜索。
-        支持 Windows 和 Unix 系统。
-        """
-        if sys.platform == 'win32':
-            # Windows 系统
-            if msvcrt.kbhit():
-                # 清空输入缓冲区
-                while msvcrt.kbhit():
-                    msvcrt.getch()
-                return True
-        else:
-            # Unix 系统
-            if tty and termios:  # 确保模块已导入
-                fd = sys.stdin.fileno()
-                old_settings = termios.tcgetattr(fd)
-                try:
-                    tty.setraw(fd)
-                    # 设置超时时间为0，使read非阻塞
-                    rlist, _, _ = select.select([sys.stdin], [], [], 0)
-                    if rlist:
-                        sys.stdin.read(1)
-                        return True
-                finally:
-                    termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
-        return False
-
+        
     def play_baka_sound(self):
         try:
             # 解码 base64 音频数据
@@ -318,8 +278,7 @@ class ImprovedNineExpressionFinder:
     def _find_expression_with_timeout(self, target: int, timeout_ms: int = 1000) -> Optional[str]:
         # 对于大数直接使用分解策略
         if target > 5000:
-            return self._decompose_large_number(target)
-            
+            return self._decompose_large_number(target)  
         # 首先尝试启发式搜索
         # 数学约束预判
         self._disable_divisions = False
@@ -439,118 +398,12 @@ class ImprovedNineExpressionFinder:
             wrapped += '\n    ' + line.lstrip('+-*/').lstrip()
         return wrapped
 
-    def _find_expression_without_timeout(self, target: int) -> Optional[str]:
-        """解除时间限制进行重试，并显示进度"""
-        self._disable_divisions = False
-        if target % 9 != 0:
-            self._disable_divisions = True
-        last_debug_time = time.time()
-
-        queue: List[Tuple[float, Expression]] = []
-        visited: Set[float] = set()
-        attempts = 0  # 用来记录尝试的组合次数
-
-        for num in self.base_numbers:
-            expr_str = str(num).replace('9', '⑨ ')  # 替换基础数字为符号
-            exp = Expression(float(num), str(num), set(), None)
-            queue.append((self._estimate_distance(exp.value, target), exp))
-            visited.add(exp.value)
-
-        print("\n按任意键可以停止搜索...")
-
-        start_time = time.time()
-
-        while queue:
-
-            # 添加用户中断检测：
-            if self._user_wants_to_abort():
-                print("\n检测到按键，中断搜索")
-                print("\033[38;2;1;101;204mcirno\033[0m下次一定会算出来的！")
-                print("琪露诺才不是baka！")
-                return ""  # 或者直接退出程序，比如调用 sys.exit(0)
-
-            queue.sort(key=lambda x: (
-                x[0] * (0.8 if '*' in x[1].operators_used else 1),
-                -self._diversity_score(x[1].operators_used)
-            ))
-
-            queue.sort(key=lambda x: (
-                x[0] * (0.5 if '*' in x[1].operators_used else 1),
-                -self._diversity_score(x[1].operators_used),
-                len(x[1].expr)  # 优先短表达式
-            ))
-
-            # 调试信息输出（每隔5秒）
-            current_time = time.time()
-            if current_time - last_debug_time > 5:
-                if queue:
-                    # 获取当前最佳候选
-                    best = min(queue, key=lambda x: abs(x[1].value - target))
-                    print(f"搜索中... 当前最佳候选值：{best[1].value} (与目标差距：{abs(best[1].value - target)})")
-                    last_debug_time = current_time  # 更新时间戳
-
-            _, current_exp = queue.pop(0)
-
-            # 每隔 1 秒更新一次进度
-            if time.time() - start_time >= 1:
-                print(f"已尝试{attempts}种组合，\033[38;2;1;101;204mcirno\033[0m正在努力搜索...")
-                start_time = time.time()  # 重置时间
-
-            if self._is_integer(current_exp.value) and round(current_exp.value) == target:
-                result = self._simplify_expression(current_exp.expr)
-                self.expression_cache[target] = result
-
-                # 替换表达式中的所有 '9' 为 '⑨ '
-                result_with_symbols = result.replace('9', '⑨ ')
-                return result_with_symbols
-
-            # 动态获取运算符列表
-            operators = self._get_operators(target)
-            random.shuffle(operators)
-
-            for base_num in self.base_numbers:
-                base_exp = Expression(float(base_num), str(base_num), set(), None)
-
-                for op in operators:
-                    result = self._evaluate(current_exp, base_exp, op)
-                    if result and result.value not in visited and self._is_worth_exploring(result.value, target,visited):
-                        queue.append((self._estimate_distance(result.value, target), result))
-                        visited.add(result.value)
-
-                    if op in {'-', '/'}:
-                        reverse_result = self._evaluate(base_exp, current_exp, op)
-                        if reverse_result and reverse_result.value not in visited and self._is_worth_exploring(
-                                reverse_result.value, target, visited):
-                            queue.append((self._estimate_distance(reverse_result.value, target), reverse_result))
-                            visited.add(reverse_result.value)
-
-            attempts += 1
-
-        return "未找到有效表达式"
-
     def find_expression(self, target: int) -> str:
         result = self._find_expression_with_timeout(target)
         if result:
             # 如果原始表达式存在，转换为符号形式
             symbol_result = result.replace('9', '⑨ ')
-            if symbol_result == "搜索已中断":
-                # 用户中断了搜索，做相应处理
-                return "搜索已中断，返回主菜单。"
             return symbol_result
-
-        # 在这里询问用户是否解除时间限制重新尝试
-        print("无法在1s内找到有效表达式。")
-        while True:
-            retry = input("是否解除时间限制重新尝试？（请输入y/n并按下回车确认）").strip().lower()
-            if retry in ('y', 'n'):
-                break
-            print("请输入y或n")
-
-        if retry == 'y':
-            print("好的，正在尝试搜索：")
-            return self._find_expression_without_timeout(target)
-        else:
-            print("好的,请在下方输入目标整数")
             return ""
 
 
@@ -570,14 +423,12 @@ def main():
             target = int(user_input)
             start = time.time()
             expr = finder.find_expression(target)
-            # 如果返回的结果既不是 "" 也不是用户中断的提示，则打印结果和 baka~
-            if expr not in ["", "搜索已中断，返回主菜单。", "搜索已中断"]:
+            if expr:
                 print(f"\n结果 ({time.time() - start:.2f}s):")
                 print(f"{target} = {expr}")
                 # 使用 ANSI 转义码设置文字颜色为 #0165cc（RGB: 1,101,204），打印 "baka~"
                 print("\033[38;2;1;101;204mbaka~\033[0m")
                 finder.play_baka_sound()
-
             else:
                 # 如果搜索中断或找不到结果，原样输出提示信息
                 print(expr)
