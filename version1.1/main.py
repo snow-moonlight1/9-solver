@@ -10,7 +10,6 @@ import wave
 import pyaudio
 import io
 import base64
-
 try:
     import msvcrt  # Windows 系统可用
 except ImportError:
@@ -47,6 +46,7 @@ class ImprovedNineExpressionFinder:
         self.base_numbers = {9, 99, 999}
         from audio_data import AUDIO_DATA
         self.AUDIO_DATA = AUDIO_DATA
+        self.large_number_threshold = 5000  # 大数阈值
         self.expression_cache: Dict[int, str] = {
     1017: '(9+999)+9',
     999: '(999*9)/9',
@@ -404,7 +404,47 @@ class ImprovedNineExpressionFinder:
                 self._find_expression_with_timeout(i, timeout_ms=100)
         print("预计算完成！")
 
+    def _decompose_large_number(self, target: int) -> Optional[str]:
+        """对大数进行分解，先用基础数进行主要分解，再对剩余小数进行优化分解"""
+        if target <= self.large_number_threshold:
+            return None
+            
+        # 尝试用999进行分解
+        quotient = target // 999
+        remainder = target % 999
+        
+        if quotient > 0:
+            # 先处理商
+            quotient_expr = self._find_expression_with_timeout(quotient, timeout_ms=500)
+            if quotient_expr:
+                if remainder == 0:
+                    return f"999*({quotient_expr})"
+                # 处理余数
+                remainder_expr = self._find_expression_with_timeout(remainder, timeout_ms=500)
+                if remainder_expr:
+                    return f"999*({quotient_expr})+({remainder_expr})"
+        
+        # 尝试用其他基础数组合
+        for base in [99, 9]:
+            quotient = target // base
+            remainder = target % base
+            if quotient > 0:
+                quotient_expr = self._find_expression_with_timeout(quotient, timeout_ms=500)
+                if quotient_expr:
+                    if remainder == 0:
+                        return f"{base}*({quotient_expr})"
+                    remainder_expr = self._find_expression_with_timeout(remainder, timeout_ms=500)
+                    if remainder_expr:
+                        return f"{base}*({quotient_expr})+({remainder_expr})"
+        
+        return None
+
     def _find_expression_with_timeout(self, target: int, timeout_ms: int = 1000) -> Optional[str]:
+        # 检查是否是大数，如果是则尝试分解
+        large_number_expr = self._decompose_large_number(target)
+        if large_number_expr:
+            return large_number_expr
+            
         # 数学约束预判
         self._disable_divisions = False
         if target % 9 != 0:  # 不能被9整除时禁用除以9的操作
