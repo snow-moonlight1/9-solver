@@ -65,9 +65,6 @@ if __name__ == "__main__":
         print(f"错误信息: {str(e)}")
         print(f"发生位置: {e.__traceback__.tb_lineno}行\033[0m")
         raise
-    print("高频组合生成结果（前20个示例）：")
-    for i, (k, v) in enumerate(list(combinations.items())[:20]):
-        print(f"{k} = {v}")
     print("\n完整结果已生成，请复制以下字典到主程序：")
     print("{")
     for k, v in combinations.items():
