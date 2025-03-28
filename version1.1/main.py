@@ -11,12 +11,14 @@ import pyaudio
 import io
 import base64
 import threading
+from decimal import Decimal, getcontext
 sys.stdout.reconfigure(encoding='utf-8')
+getcontext().prec = 50
 
 @dataclass
 class Expression:
     """表达式类，存储数值和对应的字符串表示"""
-    value: float
+    value: Decimal
     expr: str
     operators_used: set
     operator: Optional[str] = None
@@ -32,7 +34,7 @@ class Expression:
 class ImprovedNineExpressionFinder:
     def __init__(self):
         self._disable_divisions = False
-        self.base_numbers = {9, 99, 999}
+        self.base_numbers = {Decimal('9'), Decimal('99'), Decimal('999')}
         from audio_data import AUDIO_DATA
         self.AUDIO_DATA = AUDIO_DATA
         self.large_number_threshold = 5000  # 大数阈值
@@ -436,7 +438,11 @@ def main():
             break
 
         try:
-            target = int(user_input)
+            # 支持科学计数法输入
+            if 'e' in user_input.lower():
+                target = int(float(user_input))
+            else:
+                target = int(user_input)
             start = time.time()
             expr = finder.find_expression(target)
             if expr:
@@ -449,7 +455,7 @@ def main():
                 # 如果搜索中断或找不到结果，原样输出提示信息
                 print(expr)
         except ValueError:
-            print("请输入有效整数！")
+            print("请输入有效整数或科学计数法(如1e3)！")
 
 if __name__ == "__main__":
     main()
