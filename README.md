@@ -130,7 +130,7 @@ class ImprovedNineExpressionFinder:
 ## 🌟 特别致谢
 
 - [homo数字论证器](https://github.com/itorr/homo) 提供灵感启发
-- FinaleDreamilyNeko（bushi 
+- FinaleDreamilyNeko
 
 ## **🔗 相关链接**
 
