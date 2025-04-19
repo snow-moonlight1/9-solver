@@ -293,7 +293,7 @@ class NineSolverGUI(QMainWindow):
                     <p>目标: <span style="font-weight: bold;">{target}</span></p>
                     <p>结果 (<span style="color: #6c757d;">{elapsed:.2f}秒</span>):</p>
                     <p><span style="font-weight: bold;">{target}</span> = <span style="color: #4a90e2;">{expr}</span></p>
-                    <p style="color: #0165cc; font-weight: bold;">⑨ baka~</p>
+                    <p style="color: #0165cc; font-weight: bold;">baka~</p>
                 </div>
             """)
             
