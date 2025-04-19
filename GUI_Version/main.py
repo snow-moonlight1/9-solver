@@ -1,11 +1,10 @@
 from dataclasses import dataclass
-from typing import Optional, Set, Dict, List, Tuple
+from typing import Optional, Set, List, Tuple
 import math
 import time
 import random
 import re
 import sys
-import select
 import wave
 import pyaudio
 import io
