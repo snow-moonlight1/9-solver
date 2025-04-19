@@ -3,7 +3,7 @@ import sys
 from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
                              QLabel, QLineEdit, QPushButton, QTextEdit, QFrame, QSizePolicy)
 from PyQt6.QtCore import Qt, QThread, pyqtSignal, QPropertyAnimation, QEasingCurve, QSequentialAnimationGroup
-from PyQt6.QtGui import QFont, QIcon, QColor, QPalette
+from PyQt6.QtGui import QFont, QIcon, QColor
 from PyQt6.QtWidgets import QGraphicsOpacityEffect
 from main import ImprovedNineExpressionFinder
 import time
