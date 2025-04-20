@@ -72,7 +72,8 @@ pip install pyaudio
 
 ```bash
 python main.py
-python gui.py
+
+python gui_main.py
 ```
 
 # 示例输入输出
@@ -98,7 +99,7 @@ baka~
 │   └── icon.ico            # 程序图标
 └── GUI_Version/            # 实验性GUI
     ├── main.py             # 后端
-    └── gui.py              # 前端                   
+    └── gui_main.py         # 前端                   
 ```
 
 ## 🧠 算法亮点
