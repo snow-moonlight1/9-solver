@@ -1,12 +1,15 @@
 # gui_main.py
 import sys
 from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
-                             QLabel, QLineEdit, QPushButton, QTextEdit, QFrame, QSizePolicy)
+                             QLabel, QLineEdit, QPushButton, QTextEdit, QFrame, QSizePolicy, 
+                             QSystemTrayIcon, QMenu)
 from PyQt6.QtCore import Qt, QThread, pyqtSignal, QPropertyAnimation, QEasingCurve, QSequentialAnimationGroup
-from PyQt6.QtGui import QFont, QIcon, QColor
+from PyQt6.QtGui import QFont, QIcon, QColor, QPixmap
 from PyQt6.QtWidgets import QGraphicsOpacityEffect
 from main import ImprovedNineExpressionFinder
+from Icon_Data import ICON_DATA
 import time
+import base64
 
 class WorkerThread(QThread):
     result_ready = pyqtSignal(str, str, float)
@@ -64,11 +67,28 @@ class AnimatedPushButton(QPushButton):
 class NineSolverGUI(QMainWindow):
     def __init__(self):
         super().__init__()
+        
+        # 初始化系统托盘
+        self.tray_icon = QSystemTrayIcon(self)
+        self.ICON_DATA = ICON_DATA  
+        from PyQt6.QtGui import QImage
+        self.tray_icon.setIcon(QIcon(QPixmap.fromImage(QImage.fromData(base64.b64decode(self.ICON_DATA)))))
+        
+        # 创建托盘菜单
+        tray_menu = QMenu()
+        show_action = tray_menu.addAction("显示")
+        show_action.triggered.connect(self.show_normal)
+        quit_action = tray_menu.addAction("退出")
+        quit_action.triggered.connect(QApplication.instance().quit)
+        self.tray_icon.setContextMenu(tray_menu)
+        
+        # 连接托盘图标点击事件
+        self.tray_icon.activated.connect(self.on_tray_icon_activated)
         self.setWindowTitle("⑨")
         self.setMinimumSize(800, 600)
         
         # 设置窗口图标
-        self.setWindowIcon(QIcon("assets/icon.ico"))
+        self.setWindowIcon(QIcon(QPixmap.fromImage(QImage.fromData(base64.b64decode(self.ICON_DATA)))))
         
         # 设置主窗口样式
         self.setStyleSheet("""
@@ -305,6 +325,22 @@ class NineSolverGUI(QMainWindow):
         self.result_display.setPlainText(f"错误: {error_msg}")
         self.status_label.setText("发生错误")
         self.stop_loading_animation()
+
+    def closeEvent(self, event):
+        # 重写关闭事件，最小化到托盘
+        self.hide()
+        self.tray_icon.show()
+        event.ignore()
+        
+    def show_normal(self):
+        # 从托盘恢复窗口
+        self.show()
+        self.tray_icon.hide()
+        
+    def on_tray_icon_activated(self, reason):
+        # 处理托盘图标点击事件
+        if reason == QSystemTrayIcon.ActivationReason.Trigger:
+            self.show_normal()
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)

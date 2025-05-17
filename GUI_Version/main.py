@@ -11,7 +11,6 @@ import io
 import base64
 import threading
 from decimal import Decimal, getcontext
-sys.stdout.reconfigure(encoding='utf-8')
 getcontext().prec = 50
 
 @dataclass
