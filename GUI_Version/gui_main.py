@@ -45,13 +45,16 @@ class AnimatedPushButton(QPushButton):
         self.animation_group.addAnimation(self.release_anim)
         self.original_geometry = self.geometry()
         
-    def mousePressEvent(self, event):
+    def triggerAnimation(self):
         if self.animation_group.state() != QPropertyAnimation.State.Running:
             self.press_anim.setStartValue(self.original_geometry)
             self.press_anim.setEndValue(self.original_geometry.adjusted(0, 3, 0, 3))
             self.release_anim.setStartValue(self.original_geometry.adjusted(0, 3, 0, 3))
             self.release_anim.setEndValue(self.original_geometry)
             self.animation_group.start()
+            
+    def mousePressEvent(self, event):
+        self.triggerAnimation()
         super().mousePressEvent(event)
         
     def resizeEvent(self, event):
@@ -61,7 +64,7 @@ class AnimatedPushButton(QPushButton):
 class NineSolverGUI(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("⑨ 表达式求解器")
+        self.setWindowTitle("⑨")
         self.setMinimumSize(800, 600)
         
         # 设置窗口图标
@@ -70,7 +73,7 @@ class NineSolverGUI(QMainWindow):
         # 设置主窗口样式
         self.setStyleSheet("""
             QMainWindow {
-                background-color: #f8f9fa;
+                background-color: #f3f3f3;
             }
             QLabel {
                 color: #495057;
@@ -206,21 +209,13 @@ class NineSolverGUI(QMainWindow):
         self.status_bar.addPermanentWidget(self.status_label)
         
         # 连接回车键
-        self.input_field.returnPressed.connect(self.calculate_btn.click)
+        self.input_field.returnPressed.connect(self.on_enter_pressed)
+        
+    def on_enter_pressed(self):
+        self.calculate_btn.triggerAnimation()
+        self.calculate_btn.click()
         
     def setup_animations(self):
-        # 窗口淡入动画
-        self.opacity_effect = QGraphicsOpacityEffect(self)
-        self.setGraphicsEffect(self.opacity_effect)
-        self.opacity_effect.setOpacity(0)
-        
-        self.fade_in = QPropertyAnimation(self.opacity_effect, b"opacity")
-        self.fade_in.setDuration(500)
-        self.fade_in.setStartValue(0)
-        self.fade_in.setEndValue(1)
-        self.fade_in.setEasingCurve(QEasingCurve.Type.InOutQuad)
-        self.fade_in.start()
-        
         # 状态栏加载动画
         self.loading_animation = QPropertyAnimation(self.status_label, b"styleSheet")
         self.loading_animation.setDuration(500)
