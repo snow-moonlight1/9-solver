@@ -317,11 +317,15 @@ class SettingsPage(QWidget):
         # 设置为无边框窗口部件，并且在父部件之上（如果希望它覆盖其他内容）
         # 但我们将其作为子部件添加，并用动画控制其显示和位置
         self.setWindowFlags(Qt.WindowType.FramelessWindowHint | Qt.WindowType.NoDropShadowWindowHint)
-        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground) # 支持透明背景（如果需要圆角）
+        
         
         layout = QVBoxLayout(self)
         layout.setContentsMargins(20, 20, 20, 20) # 内边距
         layout.setSpacing(15)
+
+        self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground)  # 关键！确保样式表背景生效
+        self.update()  # 立即触发重绘   
+        self.setAutoFillBackground(True)  # 启用自动填充背景
 
         self.title_label = QLabel("设置")
         title_font = QFont()
@@ -386,7 +390,7 @@ class SettingsPage(QWidget):
         self.opacity_animation.setEasingCurve(QEasingCurve.Type.Linear)
 
         self.parallel_anim_group.start()
-
+        
     def hide_animated(self):
         if not self.parentWidget():
             self.hide()
