@@ -516,52 +516,44 @@ class NineSolverGUI(QMainWindow):
         else:
             self.status_label.setText("未找到结果")
 
-    # 在 NineSolverGUI 类中添加
+
     def _render_result_display(self):
         """根据存储的最后结果和当前主题，重新渲染结果显示区域。"""
         if self._last_target is None or self._last_expression is None or self._last_elapsed_time is None:
-            # 如果没有存储的结果（比如程序刚启动，或上次计算失败/清空了），则不执行或显示提示
-            # self.result_display.setPlainText("无计算结果可显示。") # 或者保持为空
+            self.result_display.clear() # 如果没有结果，清空显示
             return
 
         target_str = self._last_target
         expr = self._last_expression
         elapsed = self._last_elapsed_time
 
-        # 根据当前主题确定文本和特定颜色
-        # 注意：这里的 default_text_color 应该由 QTextEdit 的全局样式表控制
-        # 我们主要关心 HTML 内联样式中的特殊颜色
-        # QTextEdit 的 stylesheet 已经有 color: #e0e0e0 (dark) 或 color: #212529 (light)
-        # 所以 div 的 color 可以不设置，或者设置为 transparent/inherit，让父级控制
-        # 但为了明确，我们可以继续设置它，或者确保它与QTextEdit的默认颜色一致
-        
-        # HTML div 的主文字颜色，应与 QTextEdit 的 stylesheet color 属性一致
-        html_default_text_color = "#b0c4de" if self.current_theme == "dark" else "#495057" 
-                                   # ^-- 使用 DARK_STYLESHEET_ACTIVE_BASE 中 QLabel 的颜色
-                                   # 或者 DARK_STYLESHEET_INACTIVE_BASE 中 QLabel 的颜色
-                                   # 取决于你希望 QTextEdit 的默认文字颜色是什么。
-                                   # 通常，它会继承自 QTextEdit 的 stylesheet 设置。
-                                   # 为了安全，我们这里明确指定。
-                                   # 注意：你之前用的是 #e0e0e0 (dark) 和 #212529 (light) for default_text_color
-                                   # 我们需要保持一致性。
+        # --- 统一颜色逻辑 ---
+        unified_dark_text_color = ""
+        light_text_color_default = "#212529" # QTextEdit 浅色模式默认文字颜色
+        light_text_color_time = "#6c757d"   # 浅色模式时间颜色
+        light_text_color_expr = "#000000"   # 浅色模式表达式颜色
 
-        # 我们参照 QTextEdit 在主题样式表中的 `color` 属性
         if self.current_theme == "dark":
+            # 深色模式下，所有相关文本（除了baka）都使用同一种颜色，
+            # 该颜色根据激活状态变化
             if self.isActiveWindow():
-                html_default_text_color = "#b0c4de" # Dark active QTextEdit color
+                unified_dark_text_color = "#b0c4de" # 深色激活状态下的统一文本颜色
             else:
-                html_default_text_color = "#a0abb3" # Dark inactive QTextEdit color
-        else: # light
-            html_default_text_color = "#212529" # Light QTextEdit color
-
-        # 特殊颜色
-        time_color = "#aaaaaa" if self.current_theme == "dark" else "#6c757d" # 这些可以保持
-        # expr_color 在你的代码中是 #ffffff (dark) 和 #000000 (light)
-        # 这个颜色是你特别为表达式结果设置的，应该保留
-        expr_color_html = "#ffffff" if self.current_theme == "dark" else "#000000"
+                unified_dark_text_color = "#a0abb3" # 深色非激活状态下的统一文本颜色
+            
+            html_default_text_color = unified_dark_text_color
+            time_color = unified_dark_text_color
+            expr_color_html = unified_dark_text_color
+        else: # light theme
+            html_default_text_color = light_text_color_default # 或 #495057，取决于你QLabel的颜色
+            time_color = light_text_color_time
+            expr_color_html = light_text_color_expr
+        
+        # baka_color 保持不变，它是品牌色
         baka_color = "#2c9fff" if self.current_theme == "dark" else "#0165cc"
+        # --- 颜色逻辑结束 ---
 
-        if expr: # 确保表达式存在
+        if expr: 
             self.result_display.setHtml(f"""
                 <div style="font-family: Consolas, 'Courier New', monospace; font-size: 14px; color: {html_default_text_color};">
                     <p>目标: <span style="font-weight: bold;">{target_str}</span></p>
@@ -570,9 +562,15 @@ class NineSolverGUI(QMainWindow):
                     <p style="color: {baka_color}; font-weight: bold;">baka~</p>
                 </div>
             """)
-        else: # 如果之前的结果是 "未找到表达式"
-             # QTextEdit 的全局样式会处理文本颜色
-            self.result_display.setPlainText(f"无法找到 {target_str} 的有效表达式")   
+        else:
+            # 当表达式未找到时，也使用统一的颜色（通过QTextEdit的stylesheet实现）
+            # self.result_display.setPlainText(f"无法找到 {target_str} 的有效表达式")
+            # 为了确保颜色与HTML版本一致，这里也用HTML
+            self.result_display.setHtml(f"""
+                <div style="font-family: Consolas, 'Courier New', monospace; font-size: 14px; color: {html_default_text_color};">
+                    <p>无法找到 {target_str} 的有效表达式</p>
+                </div>
+            """)  
     def on_enter_pressed(self):
         self.calculate_btn.triggerAnimation()
         self.calculate_btn.click()
