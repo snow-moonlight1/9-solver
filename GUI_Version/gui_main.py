@@ -4,12 +4,13 @@ from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, QH
                              QLabel, QLineEdit, QPushButton, QTextEdit, QFrame, QSizePolicy, 
                              QSystemTrayIcon, QMenu)
 from PyQt6.QtCore import Qt, QThread, pyqtSignal, QPropertyAnimation, QEasingCurve, QSequentialAnimationGroup, QEvent
-from PyQt6.QtGui import QFont, QIcon, QColor, QPixmap, QPalette
+from PyQt6.QtGui import QFont, QIcon, QColor, QPixmap, QPalette, QImage
 from PyQt6.QtWidgets import QGraphicsOpacityEffect
 from main import ImprovedNineExpressionFinder
 from Icon_Data import ICON_DATA
 import time
 import base64
+
 
 def get_system_theme():
     """检测系统主题（浅色或深色）"""
@@ -300,7 +301,10 @@ class NineSolverGUI(QMainWindow):
         # 初始化系统托盘
         self.tray_icon = QSystemTrayIcon(self)
         self.ICON_DATA = ICON_DATA  
-        from PyQt6.QtGui import QImage
+        # 新增：存储最后一次成功计算的结果
+        self._last_target = None
+        self._last_expression = None
+        self._last_elapsed_time = None
         self.tray_icon.setIcon(QIcon(QPixmap.fromImage(QImage.fromData(base64.b64decode(self.ICON_DATA)))))
         
         # 创建托盘菜单
@@ -408,13 +412,13 @@ class NineSolverGUI(QMainWindow):
         # 4. 构建并应用最终样式表
         main_window_bg_style = f"QMainWindow {{ background-color: {current_main_window_bg}; }}"
         final_stylesheet = f"{main_window_bg_style}\n{current_base_stylesheet}"
-        
         self.setStyleSheet(final_stylesheet)
         
         # 5. 其他更新
         self.stop_loading_animation()
         self.update() # 通常 setStyleSheet 会处理这个，但为了确保，我们也可以显式调用
         # QApplication.processEvents() # 先注释掉，看是否需要
+        self._render_result_display() #主题切换后重新渲染结果
     def init_ui(self):
         # 主部件
         central_widget = QWidget()
@@ -494,34 +498,81 @@ class NineSolverGUI(QMainWindow):
         # 连接回车键
         self.input_field.returnPressed.connect(self.on_enter_pressed)
 
-        # 在 NineSolverGUI 类中:
-    def show_result(self, target, expr, elapsed):
+        
+    def show_result(self, target_str: str, expr: str, elapsed: float): # 添加类型提示
         self.stop_loading_animation()
         
-        # 根据当前主题确定文本和特定颜色
-        default_text_color = "#e0e0e0" if self.current_theme == "dark" else "#212529"
-        time_color = "#aaaaaa" if self.current_theme == "dark" else "#6c757d"
-        expr_color = "#ffffff" if self.current_theme == "dark" else "#000000" # 深色主题下显示白色，浅色主题下显示黑色
-        baka_color = "#2c9fff" if self.current_theme == "dark" else "#0165cc" # Baka颜色也可以调整
+        # 存储结果，以便主题切换时可以重绘
+        self._last_target = target_str
+        self._last_expression = expr
+        self._last_elapsed_time = elapsed
+        
+        self._render_result_display() # 调用新的辅助方法来渲染显示
 
-        if expr:
+        if expr: # 只有成功找到表达式才播放声音和更新状态
+            self.status_label.setText(f"计算完成 - 耗时 {elapsed:.2f}秒")
+            finder = ImprovedNineExpressionFinder() # 实例化可以放在外面如果不需要每次新建
+            finder.play_baka_sound()
+        else:
+            self.status_label.setText("未找到结果")
+
+    # 在 NineSolverGUI 类中添加
+    def _render_result_display(self):
+        """根据存储的最后结果和当前主题，重新渲染结果显示区域。"""
+        if self._last_target is None or self._last_expression is None or self._last_elapsed_time is None:
+            # 如果没有存储的结果（比如程序刚启动，或上次计算失败/清空了），则不执行或显示提示
+            # self.result_display.setPlainText("无计算结果可显示。") # 或者保持为空
+            return
+
+        target_str = self._last_target
+        expr = self._last_expression
+        elapsed = self._last_elapsed_time
+
+        # 根据当前主题确定文本和特定颜色
+        # 注意：这里的 default_text_color 应该由 QTextEdit 的全局样式表控制
+        # 我们主要关心 HTML 内联样式中的特殊颜色
+        # QTextEdit 的 stylesheet 已经有 color: #e0e0e0 (dark) 或 color: #212529 (light)
+        # 所以 div 的 color 可以不设置，或者设置为 transparent/inherit，让父级控制
+        # 但为了明确，我们可以继续设置它，或者确保它与QTextEdit的默认颜色一致
+        
+        # HTML div 的主文字颜色，应与 QTextEdit 的 stylesheet color 属性一致
+        html_default_text_color = "#b0c4de" if self.current_theme == "dark" else "#495057" 
+                                   # ^-- 使用 DARK_STYLESHEET_ACTIVE_BASE 中 QLabel 的颜色
+                                   # 或者 DARK_STYLESHEET_INACTIVE_BASE 中 QLabel 的颜色
+                                   # 取决于你希望 QTextEdit 的默认文字颜色是什么。
+                                   # 通常，它会继承自 QTextEdit 的 stylesheet 设置。
+                                   # 为了安全，我们这里明确指定。
+                                   # 注意：你之前用的是 #e0e0e0 (dark) 和 #212529 (light) for default_text_color
+                                   # 我们需要保持一致性。
+
+        # 我们参照 QTextEdit 在主题样式表中的 `color` 属性
+        if self.current_theme == "dark":
+            if self.isActiveWindow():
+                html_default_text_color = "#b0c4de" # Dark active QTextEdit color
+            else:
+                html_default_text_color = "#a0abb3" # Dark inactive QTextEdit color
+        else: # light
+            html_default_text_color = "#212529" # Light QTextEdit color
+
+        # 特殊颜色
+        time_color = "#aaaaaa" if self.current_theme == "dark" else "#6c757d" # 这些可以保持
+        # expr_color 在你的代码中是 #ffffff (dark) 和 #000000 (light)
+        # 这个颜色是你特别为表达式结果设置的，应该保留
+        expr_color_html = "#ffffff" if self.current_theme == "dark" else "#000000"
+        baka_color = "#2c9fff" if self.current_theme == "dark" else "#0165cc"
+
+        if expr: # 确保表达式存在
             self.result_display.setHtml(f"""
-                <div style="font-family: Consolas, 'Courier New', monospace; font-size: 14px; color: {default_text_color};">
-                    <p>目标: <span style="font-weight: bold;">{target}</span></p>
+                <div style="font-family: Consolas, 'Courier New', monospace; font-size: 14px; color: {html_default_text_color};">
+                    <p>目标: <span style="font-weight: bold;">{target_str}</span></p>
                     <p>结果 (<span style="color: {time_color};">{elapsed:.2f}秒</span>):</p>
-                    <p><span style="font-weight: bold;">{target}</span> = <span style="color: {expr_color};">{expr}</span></p>
+                    <p><span style="font-weight: bold;">{target_str}</span> = <span style="color: {expr_color_html};">{expr}</span></p>
                     <p style="color: {baka_color}; font-weight: bold;">baka~</p>
                 </div>
             """)
-            
-            self.status_label.setText(f"计算完成 - 耗时 {elapsed:.2f}秒")
-            
-            finder = ImprovedNineExpressionFinder()
-            finder.play_baka_sound()
-        else:
-            # 对于纯文本，QTextEdit 的 stylesheet 已经处理了颜色
-            self.result_display.setPlainText(f"无法找到 {target} 的有效表达式")
-            self.status_label.setText("未找到结果")   
+        else: # 如果之前的结果是 "未找到表达式"
+             # QTextEdit 的全局样式会处理文本颜色
+            self.result_display.setPlainText(f"无法找到 {target_str} 的有效表达式")   
     def on_enter_pressed(self):
         self.calculate_btn.triggerAnimation()
         self.calculate_btn.click()
@@ -534,6 +585,11 @@ class NineSolverGUI(QMainWindow):
         self.loading_state = 0
         
     def start_calculation(self):
+         # 清空之前的结果，因为要开始新的计算
+        self._last_target = None
+        self._last_expression = None
+        self._last_elapsed_time = None
+        # self.result_display.clear() # 也可以在这里清空显示，或者让 "计算中..." 覆盖
         input_text = self.input_field.text().strip()
         
         if input_text.lower() in ['q', 'quit']:
@@ -625,6 +681,11 @@ class NineSolverGUI(QMainWindow):
         self.result_display.setPlainText(f"错误: {error_msg}")
         self.status_label.setText("发生错误")
         self.stop_loading_animation()
+
+        # 清空存储的成功结果，因为这次出错了
+        self._last_target = None
+        self._last_expression = None
+        self._last_elapsed_time = None
 
     def closeEvent(self, event):
         # 重写关闭事件，最小化到托盘
