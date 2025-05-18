@@ -782,8 +782,24 @@ class NineSolverGUI(QMainWindow):
 
         # 3. 构建顶部栏布局 (包含标题和设置按钮)
         top_bar_layout = QHBoxLayout()
-        top_bar_layout.addWidget(self.title_label, 1) # 标题占据伸展空间，默认居中
-        top_bar_layout.addWidget(self.settings_button, 0, Qt.AlignmentFlag.AlignRight) # 设置按钮靠右
+        # top_bar_layout.setContentsMargins(0,0,0,0) # 可选：如果希望布局更紧凑，可以移除或减少边距
+
+        # 新增：左侧占位符，用于平衡右侧的设置按钮
+        # self.settings_button 的宽度是 32px
+        left_placeholder = QWidget()  # 创建一个空的QWidget作为占位符
+        left_placeholder.setFixedWidth(32) # 设置其宽度与 settings_button 一致
+        top_bar_layout.addWidget(left_placeholder) # 将占位符添加到布局的左侧
+
+        # 标题标签，使其在中间的剩余空间伸展
+        # self.title_label 已经设置了setAlignment(Qt.AlignmentFlag.AlignCenter)
+        # 所以它的文本会在它自己的区域内居中
+        top_bar_layout.addWidget(self.title_label, 1) # 参数 1 表示它会占据所有可用的伸展空间
+
+        # 设置按钮，保持在最右侧
+        # self.settings_button.setFixedSize(32, 32) 已经设置了固定大小
+        # Qt.AlignmentFlag.AlignRight 在这里其实不是必须的，因为 QHBoxLayout 按顺序排列
+        # 但保留它也没有坏处，确保它在其“单元格”内靠右（如果单元格比它大的话）
+        top_bar_layout.addWidget(self.settings_button, 0) # 参数 0 表示不伸展
 
         # 4. 将顶部栏和描述添加到主布局
         main_layout.addLayout(top_bar_layout)
