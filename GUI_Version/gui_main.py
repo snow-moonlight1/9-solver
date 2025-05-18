@@ -310,6 +310,7 @@ class AnimatedPushButton(QPushButton):
 
 class SettingsPage(QWidget):
     closed = pyqtSignal() # 定义一个关闭信号
+    hide_animation_started = pyqtSignal() # 定义隐藏动画开始信号
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -358,7 +359,6 @@ class SettingsPage(QWidget):
         self.parallel_anim_group.addAnimation(self.animation)
         self.parallel_anim_group.addAnimation(self.opacity_animation)
 
-
     def show_animated(self):
         if not self.parentWidget():
             return
@@ -392,6 +392,8 @@ class SettingsPage(QWidget):
         self.parallel_anim_group.start()
         
     def hide_animated(self):
+        self.hide_animation_started.emit()
+        
         if not self.parentWidget():
             self.hide()
             self.closed.emit()
@@ -531,7 +533,8 @@ class NineSolverGUI(QMainWindow):
         # 如果父对象是 self (QMainWindow)，坐标是相对于 QMainWindow 的
         # 为了简单起见，先让父对象是 self，我们将在动画中计算相对于主窗口的坐标
         self.settings_page = SettingsPage(self) # 父对象设为 self
-        self.settings_page.closed.connect(self.on_settings_page_closed)
+        self.settings_page.closed.connect(self.on_settings_page_fully_closed)
+        self.settings_page.hide_animation_started.connect(self.on_settings_hide_anim_started) # <--- 新增：连接新信号
 
         # 创建托盘菜单
         tray_menu = QMenu()
@@ -560,7 +563,7 @@ class NineSolverGUI(QMainWindow):
 
         if self.settings_page.isVisible():
             self.settings_page.hide_animated()
-            # self.settings_button.setEnabled(True) # 已移到 on_settings_page_closed
+            # 注意：模糊消失动画的启动现在由 on_settings_hide_anim_started 处理
         else:
             # 在显示设置页面前，确保它的样式是最新的
             self.settings_page.update_theme_styling(self.current_theme, self.isActiveWindow())
@@ -576,6 +579,29 @@ class NineSolverGUI(QMainWindow):
             self.settings_page.show_animated()
             self.settings_button.setEnabled(False) # 显示设置时禁用齿轮按钮，防止重复点击
    
+   # 新增槽函数：当设置页面开始隐藏动画时调用
+    def on_settings_hide_anim_started(self):
+        # print("Settings hide animation started, starting blur removal animation.") # 调试用
+        animation_duration_hide = 300 # 与 SettingsPage 的 hide_animated 的 opacity 动画时长一致 (或者 geometry 的 250ms)
+                                    # 保持和展开时一致的 300ms 可能更协调
+
+        if hasattr(self, 'blur_effect') and hasattr(self, 'blur_animation'):
+            self.blur_animation.stop() 
+            self.blur_animation.setDuration(animation_duration_hide)
+            self.blur_animation.setEasingCurve(QEasingCurve.Type.InQuad) 
+            self.blur_animation.setStartValue(self.blur_effect.blurRadius()) 
+            self.blur_animation.setEndValue(0) 
+
+            try:
+                self.blur_animation.finished.disconnect(self._on_blur_anim_finished_disable_effect)
+            except TypeError:
+                pass 
+            self.blur_animation.finished.connect(self._on_blur_anim_finished_disable_effect)
+            
+            self.blur_animation.start()
+        else: 
+            if hasattr(self, 'blur_effect'):
+                self.blur_effect.setEnabled(False)
     def _update_settings_button_style(self):
         """根据当前主题和激活状态更新设置按钮的颜色。"""
         if not hasattr(self, 'current_theme'): # 确保主题已初始化
@@ -613,31 +639,13 @@ class NineSolverGUI(QMainWindow):
             self.blur_animation.finished.disconnect(self._on_blur_anim_finished_disable_effect)
         except TypeError:
             pass
-    def on_settings_page_closed(self):
+    def on_settings_page_fully_closed(self): 
+        # print("Settings page fully closed.") # 调试用
         self.settings_button.setEnabled(True) 
-        
-        animation_duration_hide = 250 # 与 SettingsPage 的 hide_animated 的 geometry 动画时长一致
-                                    # 或者使用与 opacity 一致的 300ms，看哪个效果更好
-
-        if hasattr(self, 'blur_effect') and hasattr(self, 'blur_animation'):
-            self.blur_animation.stop() # 停止可能正在进行的动画
-            self.blur_animation.setDuration(animation_duration_hide)
-            self.blur_animation.setEasingCurve(QEasingCurve.Type.InQuad) # 收起时的缓动
-            self.blur_animation.setStartValue(self.blur_effect.blurRadius()) # 从当前模糊度开始
-            self.blur_animation.setEndValue(0) # 动画到模糊度为0
-
-            # 当模糊动画完成时，禁用效果器以节省资源
-            # 先断开之前的连接，防止重复连接
-            try:
-                self.blur_animation.finished.disconnect(self._on_blur_anim_finished_disable_effect)
-            except TypeError:
-                pass # 如果没有连接过，会抛出 TypeError
-            self.blur_animation.finished.connect(self._on_blur_anim_finished_disable_effect)
-            
-            self.blur_animation.start()
-        else: # 如果没有动画，立即禁用
-            if hasattr(self, 'blur_effect'):
-                self.blur_effect.setEnabled(False) 
+        # 注意：模糊效果的禁用现在由 _on_blur_anim_finished_disable_effect 在模糊动画结束后处理
+        # 所以这里不需要再显式调用 self.blur_effect.setEnabled(False)
+        # 如果模糊动画因为某些原因没有运行 (比如效果器不存在)，
+        # 那么 on_settings_hide_anim_started 中的 else 分支会处理禁用。 
     def showEvent(self, event_obj: QEvent):
         """窗口第一次显示时，应用完整的主题并强制使用激活样式。"""
         super().showEvent(event_obj) 
