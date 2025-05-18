@@ -29,7 +29,7 @@ DARK_ACTIVE_BG = "#1a212d"
 DARK_INACTIVE_BG = "#202020"
 
 # 浅色主题样式表
-LIGHT_STYLESHEET ="""
+LIGHT_STYLESHEET_BASE ="""
     QMainWindow {
         /* background-color 将由事件动态设置 */
     }
@@ -98,7 +98,7 @@ LIGHT_STYLESHEET ="""
 """
 
 # 深色主题样式表
-DARK_STYLESHEET = """
+DARK_STYLESHEET_ACTIVE_BASE = """
     QMainWindow {
         /* background-color 将由事件动态设置 */
     }
@@ -164,6 +164,77 @@ DARK_STYLESHEET = """
     }
     NineSolverGUI #result_title {
         font-size: 16px; font-weight: bold; color: #5f9ea0; /* 卡其色结果标题 */
+    }
+"""
+
+# 深色主题 - 非激活状态 (调整版)
+DARK_STYLESHEET_INACTIVE_BASE = """
+    /* QMainWindow background will be #202020 */
+    QLabel { 
+        color: #9098a3; /* 比激活状态的 #b0c4de 略暗和灰一些 */
+    }
+    QPushButton {
+        background-color: #3e688f; /* 比激活的 #4682b4 略暗和去饱和 */
+        color: #d0d0d0; /* 文字颜色也略暗一点 */
+        border: none;
+        padding: 8px 12px;
+        border-radius: 4px;
+        font-size: 14px;
+        min-width: 60px; /* 确保与激活状态一致 */
+        max-width: 80px; /* 确保与激活状态一致 */
+    }
+    QPushButton:hover {
+        background-color: #365c7d; /* hover 状态也相应调整 */
+    }
+    QPushButton:disabled {
+        background-color: #303840; /* 比激活的 #3d4a56 略暗 */
+        color: #707880;    /* 比激活的 #7f8c9a 略暗 */
+    }
+    QLineEdit {
+        padding: 8px;
+        border: 1px solid #404f5d; /* 比激活的 #4a5d6e 略暗 */
+        border-radius: 4px;
+        font-size: 16px;
+        background-color: #28303a; /* 比激活的 #2d3846 略暗 */
+        color: #a0abb3;       /* 比激活的 #b0c4de 略暗和灰 */
+    }
+    QLineEdit:focus {
+        border: 1px solid #4f7b7e; /* 比激活的 #5f9ea0 略暗 */
+        background-color: #323f4b; /* 比激活的 #3a4b5c 略暗 */
+    }
+    QTextEdit {
+        padding: 12px;
+        border: 1px solid #404f5d; 
+        border-radius: 4px;
+        font-family: Consolas, 'Courier New', monospace;
+        font-size: 14px;
+        background-color: #28303a; 
+        color: #a0abb3;
+    }
+    #main_frame {
+        background-color: #262e38; /* 比激活的 #2a3542 略暗 */
+        border-radius: 8px;
+        border: 1px solid #323f4b; /* 比激活的 #3a4b5c 略暗 */
+    }
+    #status_label { 
+        color: #7a997a; /* 比激活的 #8fbc8f 略暗和灰 */
+        font-style: italic; 
+    }
+    NineSolverGUI #title_label { 
+        color: #528b8b; /* 比激活的 #5f9ea0 略暗 */
+        margin-bottom: 10px; 
+    }
+    NineSolverGUI #description { 
+        color: #7a997a; 
+        font-size: 14px; 
+    }
+    NineSolverGUI #separator { 
+        color: #323f4b; 
+    }
+    NineSolverGUI #result_title { 
+        font-size: 16px; 
+        font-weight: bold; 
+        color: #528b8b; 
     }
 """
 
@@ -261,54 +332,38 @@ class NineSolverGUI(QMainWindow):
             # 此刻窗口应该已经有了正确的激活状态
             self.apply_theme_styling(self.current_theme) 
             self._theme_initialized = True
-    def event(self, event_obj: QEvent): # 参数名使用 event_obj，并添加类型提示
-        """
-        重写事件处理器以捕获窗口激活/非激活事件。
-        """
+    # 在 NineSolverGUI 类中的 event 方法
+    def event(self, event_obj: QEvent):
         if event_obj.type() == QEvent.Type.WindowActivate:
-            # print("窗口激活 - 更新背景") # 调试语句
-            self._update_window_background(is_active=True)
+            if self._theme_initialized: 
+                self._update_activation_styles(is_active=True) # <--- 调用新方法名
         elif event_obj.type() == QEvent.Type.WindowDeactivate:
-            # print("窗口非激活 - 更新背景") # 调试语句
-            self._update_window_background(is_active=False)
-        
-        # 确保调用父类的 event 方法，处理所有其他事件
-        return super().event(event_obj)
+            if self._theme_initialized:
+                self._update_activation_styles(is_active=False) # <--- 调用新方法名
+        return super().event(event_obj)              
 
-    def _update_window_background(self, is_active: bool):
-        """
-        根据窗口激活状态和当前系统主题更新 QMainWindow 的背景色。
-        这个方法只更新背景色，不会重新应用整个主题的其他部分。
-        """
-        if not hasattr(self, 'current_theme'): # 确保主题已初始化
-            # print("主题未初始化，无法更新背景")
+    def _update_activation_styles(self, is_active: bool):
+        """根据窗口激活状态更新样式（背景色，以及深色模式下的组件）。"""
+        # print(f"_update_activation_styles: Active: {is_active}. Current theme: {self.current_theme}")
+        if not hasattr(self, 'current_theme') or not self._theme_initialized: # 确保主题已初始化
             return
 
-        # 根据当前系统主题选择激活/非激活颜色对
-        if self.current_theme == "dark":
-            active_bg = DARK_ACTIVE_BG
-            inactive_bg = DARK_INACTIVE_BG
-            base_stylesheet_template = DARK_STYLESHEET # 用于获取其他样式
-        else: # light theme
-            active_bg = LIGHT_ACTIVE_BG
-            inactive_bg = LIGHT_INACTIVE_BG
-            base_stylesheet_template = LIGHT_STYLESHEET # 用于获取其他样式
-        
-        # 确定新的背景色
-        new_background_color = active_bg if is_active else inactive_bg
-        
-        # 构建仅包含 QMainWindow 背景色的样式字符串
-        main_window_bg_style = f"QMainWindow {{ background-color: {new_background_color}; }}"
-        
-        # 获取当前应用的完整样式表，但移除旧的 QMainWindow 背景色部分（如果存在）
-        # 然后将新的背景色样式与剩余的基础样式合并。
-        # 这里的 base_stylesheet_template 已经不包含 QMainWindow 的背景色定义了。
-        final_stylesheet = f"{main_window_bg_style}\n{base_stylesheet_template}"
-        
-        # print(f"更新背景为: {new_background_color}, 激活: {is_active}") # 调试语句
-        self.setStyleSheet(final_stylesheet)
-        # self.update() # 通常 setStyleSheet 会触发必要的重绘
+        current_main_window_bg = ""
+        current_base_stylesheet = ""
 
+        if self.current_theme == "dark":
+            current_main_window_bg = DARK_ACTIVE_BG if is_active else DARK_INACTIVE_BG
+            # 关键：当激活状态改变时，深色模式的组件样式也需要切换
+            current_base_stylesheet = DARK_STYLESHEET_ACTIVE_BASE if is_active else DARK_STYLESHEET_INACTIVE_BASE
+        else: # light theme
+            current_main_window_bg = LIGHT_ACTIVE_BG if is_active else LIGHT_INACTIVE_BG
+            current_base_stylesheet = LIGHT_STYLESHEET_BASE # 浅色模式组件样式不变
+        
+        main_window_bg_style = f"QMainWindow {{ background-color: {current_main_window_bg}; }}"
+        final_stylesheet = f"{main_window_bg_style}\n{current_base_stylesheet}"
+        
+        self.setStyleSheet(final_stylesheet)
+        # self.update()
     # 在 NineSolverGUI 类中
     def handle_theme_change(self):
         """处理系统调色板变化事件。"""
@@ -322,37 +377,31 @@ class NineSolverGUI(QMainWindow):
         # 或者，如果窗口已经初始化并显示，我们也可以在这里调用 _update_window_background
         # 以确保背景色与（可能改变的）激活状态一致，但这通常由 event() 处理。
         # 此时，更重要的是确保 apply_theme_styling 被调用以切换整体主题。
-    def apply_theme_styling(self, theme_name):
-        """应用指定的主题样式表并设置初始背景色"""
-        print(f"应用主题: {theme_name}")
+    # 在 NineSolverGUI 类中
+    def apply_theme_styling(self, theme_name: str):
+        """应用指定的主题样式表，并根据当前激活状态设置QMainWindow背景色和组件样式。"""
+        print(f"apply_theme_styling: Applying theme '{theme_name}'. Active: {self.isActiveWindow()}")
         
-        base_stylesheet_template = ""
-        active_bg = ""
-        inactive_bg = ""
+        self.current_theme = theme_name # 更新当前主题记录
+        is_active = self.isActiveWindow()
+        
+        current_main_window_bg = ""
+        current_base_stylesheet = ""
 
-        if theme_name == "dark":
-            base_stylesheet_template = DARK_STYLESHEET # 这个是除了QMainWindow背景色的其他所有样式
-            self.current_theme = "dark"
-            active_bg = DARK_ACTIVE_BG
-            inactive_bg = DARK_INACTIVE_BG
-        else: 
-            base_stylesheet_template = LIGHT_STYLESHEET # 同上
-            self.current_theme = "light"
-            active_bg = LIGHT_ACTIVE_BG
-            inactive_bg = LIGHT_INACTIVE_BG
+        if self.current_theme == "dark":
+            current_main_window_bg = DARK_ACTIVE_BG if is_active else DARK_INACTIVE_BG
+            current_base_stylesheet = DARK_STYLESHEET_ACTIVE_BASE if is_active else DARK_STYLESHEET_INACTIVE_BASE
+        else: # light theme
+            current_main_window_bg = LIGHT_ACTIVE_BG if is_active else LIGHT_INACTIVE_BG
+            current_base_stylesheet = LIGHT_STYLESHEET_BASE # 浅色模式下组件样式不随激活状态变
         
-        # 根据当前激活状态选择背景色
-        current_bg_color = active_bg if self.isActiveWindow() else inactive_bg
+        main_window_bg_style = f"QMainWindow {{ background-color: {current_main_window_bg}; }}"
+        final_stylesheet = f"{main_window_bg_style}\n{current_base_stylesheet}"
         
-        # 构建 QMainWindow 的特定样式
-        main_window_bg_style = f"QMainWindow {{ background-color: {current_bg_color}; }}"
-        
-        # 合并样式
-        final_stylesheet = f"{main_window_bg_style}\n{base_stylesheet_template}"
         self.setStyleSheet(final_stylesheet)
-
-        self.stop_loading_animation() # 更新状态栏颜色
-        self.update() # 确保UI刷新
+        self.stop_loading_animation()
+        self.update()
+        # QApplication.processEvents() # 可以尝试保留或移除
     def init_ui(self):
         # 主部件
         central_widget = QWidget()
