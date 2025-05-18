@@ -2,7 +2,7 @@
 import sys
 from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
                              QLabel, QLineEdit, QPushButton, QTextEdit, QFrame, QSizePolicy, 
-                             QSystemTrayIcon, QMenu)
+                             QSystemTrayIcon, QMenu, QGraphicsBlurEffect)
 from PyQt6.QtCore import Qt, QThread, pyqtSignal, QPropertyAnimation, QEasingCurve, QSequentialAnimationGroup, QEvent, QRect, QParallelAnimationGroup
 from PyQt6.QtGui import QFont, QIcon, QColor, QPixmap, QPalette, QImage
 from PyQt6.QtWidgets import QGraphicsOpacityEffect
@@ -512,7 +512,12 @@ class NineSolverGUI(QMainWindow):
         self._last_elapsed_time = None
         self.tray_icon.setIcon(QIcon(QPixmap.fromImage(QImage.fromData(base64.b64decode(self.ICON_DATA)))))
         
-         # 实例化设置页面，父对象是主窗口的 centralWidget，或者直接是主窗口
+        # 初始化模糊效果
+        self.blur_effect = QGraphicsBlurEffect(self) # 父对象可以是 self
+        self.blur_effect.setBlurRadius(8)  # 设置模糊半径，可以调整
+        self.blur_effect.setEnabled(False) # 默认不启用
+
+        # 实例化设置页面，父对象是主窗口的 centralWidget，或者直接是主窗口
         # 如果父对象是 centralWidget，那么设置页面的坐标就是相对于 centralWidget 的
         # 如果父对象是 self (QMainWindow)，坐标是相对于 QMainWindow 的
         # 为了简单起见，先让父对象是 self，我们将在动画中计算相对于主窗口的坐标
@@ -547,6 +552,9 @@ class NineSolverGUI(QMainWindow):
         else:
             # 在显示设置页面前，确保它的样式是最新的
             self.settings_page.update_theme_styling(self.current_theme, self.isActiveWindow())
+            # 启用模糊效果
+            if hasattr(self, 'blur_effect'):
+                self.blur_effect.setEnabled(True)
             self.settings_page.show_animated()
             self.settings_button.setEnabled(False) # 显示设置时禁用齿轮按钮，防止重复点击
    
@@ -578,7 +586,10 @@ class NineSolverGUI(QMainWindow):
         """)
     def on_settings_page_closed(self):
         # 当设置页面关闭时，可以做一些事情，比如让齿轮按钮恢复可用
-        self.settings_button.setEnabled(True) 
+        self.settings_button.setEnabled(True)
+        # 禁用模糊效果
+        if hasattr(self, 'blur_effect'):
+            self.blur_effect.setEnabled(False) 
     def showEvent(self, event_obj: QEvent):
         """窗口第一次显示时，应用完整的主题并强制使用激活样式。"""
         super().showEvent(event_obj) 
@@ -678,9 +689,9 @@ class NineSolverGUI(QMainWindow):
         self.settings_page.update_theme_styling(self.current_theme, self.isActiveWindow())
 
     def init_ui(self):
-        central_widget = QWidget()
-        self.setCentralWidget(central_widget)
-        main_layout = QVBoxLayout(central_widget)
+        self.main_central_widget = QWidget() 
+        self.setCentralWidget(self.main_central_widget) 
+        main_layout = QVBoxLayout(self.main_central_widget)
         main_layout.setContentsMargins(20, 20, 20, 20)
         main_layout.setSpacing(15) # 统一间距
 
@@ -758,6 +769,11 @@ class NineSolverGUI(QMainWindow):
         frame_layout.addWidget(self.result_display)
         
         main_layout.addWidget(self.main_frame) # 将包含所有输入输出的 frame 添加到主布局
+
+        # 将模糊效果应用到 centralWidget
+    # 确保这是在 centralWidget 和它的子内容都创建之后
+        if hasattr(self, 'blur_effect') and self.main_central_widget:
+            self.main_central_widget.setGraphicsEffect(self.blur_effect)
 
         # 底部状态栏
         self.status_bar = self.statusBar()
