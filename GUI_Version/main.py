@@ -40,7 +40,7 @@ class ImprovedNineExpressionFinder:
         self.expression_cache = EXPRESSION_CACHE
         self.max_line_length = 60  # 调整行长度
         # 将缓存中的表达式转换为符号形式
-        self.expression_cache = {k: v.replace('9', '⑨ ') for k, v in self.expression_cache.items()}
+        self.expression_cache = {k: v.replace('9', '⑨') for k, v in self.expression_cache.items()}
         
     def play_baka_sound(self):
         thread = threading.Thread(target=self._play_audio, daemon=True)
@@ -289,7 +289,7 @@ class ImprovedNineExpressionFinder:
         visited: Set[float] = set()
 
         for num in self.base_numbers:
-            expr_str = str(num).replace('9', '⑨ ')  # 替换基础数字为符号
+            expr_str = str(num).replace('9', '⑨')  # 替换基础数字为符号
             exp = Expression(float(num), str(num), set(), None)
             queue.append((self._estimate_distance(exp.value, target), exp))
             visited.add(exp.value)
@@ -418,5 +418,5 @@ class ImprovedNineExpressionFinder:
         result = self._find_expression_with_timeout(target)
         if result:
             # 如果原始表达式存在，转换为符号形式
-            symbol_result = result.replace('9', '⑨ ')
+            symbol_result = result.replace('9', '⑨')
             return symbol_result
