@@ -89,9 +89,6 @@ LIGHT_STYLESHEET ="""
     NineSolverGUI #description { /* 更精确地指定描述标签 */
         color: #6c757d; font-size: 14px;
     }
-    NineSolverGUI #example_label {
-        color: #adb5bd; font-size: 12px;
-    }
     NineSolverGUI #separator {
         color: #e9ecef;
     }
@@ -106,10 +103,10 @@ DARK_STYLESHEET = """
         /* background-color 将由事件动态设置 */
     }
     QLabel {
-        color: #e0e0e0; /* 浅色文字 */
+        color: #b0c4de; /* 浅蓝灰色文字 */
     }
     QPushButton {
-        background-color: #5a98e4; /* 按钮颜色可微调以适应深色背景 */
+        background-color: #4682b4; /* 钢蓝色按钮 */
         color: white; /* 文字保持白色 */
         border: none;
         padding: 8px 12px;
@@ -119,57 +116,54 @@ DARK_STYLESHEET = """
         max-width: 80px;
     }
     QPushButton:hover {
-        background-color: #4a88d4;
+        background-color: #3a6b94;
     }
     QPushButton:disabled {
-        background-color: #555555;
-        color: #999999;
+        background-color: #3d4a56;
+        color: #7f8c9a;
     }
     QLineEdit {
         padding: 8px;
-        border: 1px solid #555555; /* 深色边框 */
+        border: 1px solid #4a5d6e; /* 蓝灰色边框 */
         border-radius: 4px;
         font-size: 16px;
-        background-color: #333333; /* 深色输入框背景 */
-        color: #e0e0e0; /* 浅色文字 */
+        background-color: #2d3846; /* 深蓝灰色输入框背景 */
+        color: #b0c4de; /* 浅蓝灰色文字 */
     }
     QLineEdit:focus {
-        border: 1px solid #5a98e4; /* 高亮边框 */
-        background-color: #404040;
+        border: 1px solid #5f9ea0; /* 卡其色高亮边框 */
+        background-color: #3a4b5c;
     }
     QTextEdit {
         padding: 12px;
-        border: 1px solid #555555; /* 深色边框 */
+        border: 1px solid #4a5d6e; /* 蓝灰色边框 */
         border-radius: 4px;
         font-family: Consolas, 'Courier New', monospace;
         font-size: 14px;
-        background-color: #333333; /* 深色文本编辑区背景 */
-        color: #e0e0e0; /* 浅色默认文字 */
+        background-color: #2d3846; /* 深蓝灰色文本编辑区背景 */
+        color: #b0c4de; /* 浅蓝灰色默认文字 */
     }
     #main_frame {
-        background-color: #2c2c2c; /* 稍浅于主背景的深色 */
+        background-color: #2a3542; /* 深蓝灰色背景 */
         border-radius: 8px;
-        border: 1px solid #444444; /* 深色边框 */
+        border: 1px solid #3a4b5c; /* 蓝灰色边框 */
     }
     #status_label { /* 确保状态栏标签有特定样式 */
-        color: #aaaaaa; /* 浅灰色文字 */
+        color: #8fbc8f; /* 浅海绿色文字 */
         font-style: italic;
     }
     /* 深色模式下的特殊颜色调整 */
     NineSolverGUI #title_label { /* 更精确地指定标题标签 */
-        color: #5a98e4; margin-bottom: 10px; /* 保持或调整品牌色 */
+        color: #5f9ea0; margin-bottom: 10px; /* 卡其色标题 */
     }
     NineSolverGUI #description { /* 更精确地指定描述标签 */
-        color: #aaaaaa; font-size: 14px;
-    }
-    NineSolverGUI #example_label {
-        color: #888888; font-size: 12px;
+        color: #8fbc8f; font-size: 14px; /* 浅海绿色描述 */
     }
     NineSolverGUI #separator {
-        color: #444444; /* 深色分隔线 */
+        color: #3a4b5c; /* 蓝灰色分隔线 */
     }
     NineSolverGUI #result_title {
-        font-size: 16px; font-weight: bold; color: #d0d0d0; /* 浅色标题 */
+        font-size: 16px; font-weight: bold; color: #5f9ea0; /* 卡其色结果标题 */
     }
 """
 
@@ -400,7 +394,7 @@ class NineSolverGUI(QMainWindow):
         input_layout.setSpacing(10)
         
         self.input_field = QLineEdit()
-        self.input_field.setPlaceholderText("请输入目标整数...")
+        self.input_field.setPlaceholderText("示例: 123, -456, 1e3")
         self.input_field.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         input_layout.addWidget(self.input_field)
         
@@ -411,10 +405,6 @@ class NineSolverGUI(QMainWindow):
         
         frame_layout.addLayout(input_layout)
         
-        # 示例提示
-        self.example_label = QLabel("示例: 123, -456, 1e3")
-        self.example_label.setObjectName("example_label")
-        frame_layout.addWidget(self.example_label)
         
         # 分隔线
         self.separator = QFrame()
@@ -449,7 +439,7 @@ class NineSolverGUI(QMainWindow):
         # 根据当前主题确定文本和特定颜色
         default_text_color = "#e0e0e0" if self.current_theme == "dark" else "#212529"
         time_color = "#aaaaaa" if self.current_theme == "dark" else "#6c757d"
-        expr_color = "#5fa8ff" if self.current_theme == "dark" else "#4a90e2" # 蓝色系，深色下可以亮一点
+        expr_color = "#ffffff" if self.current_theme == "dark" else "#000000" # 深色主题下显示白色，浅色主题下显示黑色
         baka_color = "#2c9fff" if self.current_theme == "dark" else "#0165cc" # Baka颜色也可以调整
 
         if expr:
