@@ -3,7 +3,7 @@ import sys
 from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
                              QLabel, QLineEdit, QPushButton, QTextEdit, QFrame, QSizePolicy, 
                              QSystemTrayIcon, QMenu)
-from PyQt6.QtCore import Qt, QThread, pyqtSignal, QPropertyAnimation, QEasingCurve, QSequentialAnimationGroup
+from PyQt6.QtCore import Qt, QThread, pyqtSignal, QPropertyAnimation, QEasingCurve, QSequentialAnimationGroup, QEvent
 from PyQt6.QtGui import QFont, QIcon, QColor, QPixmap, QPalette
 from PyQt6.QtWidgets import QGraphicsOpacityEffect
 from main import ImprovedNineExpressionFinder
@@ -22,10 +22,16 @@ def get_system_theme():
     else:
         return "light"
 
-# 浅色主题样式表 (大部分是你已有的)
-LIGHT_STYLESHEET = """
+# 背景色常量
+LIGHT_ACTIVE_BG = "#f0f4f9"
+LIGHT_INACTIVE_BG = "#f3f3f3"
+DARK_ACTIVE_BG = "#1a212d"
+DARK_INACTIVE_BG = "#202020"
+
+# 浅色主题样式表
+LIGHT_STYLESHEET ="""
     QMainWindow {
-        background-color: #f3f3f3; /* 浅色背景 */
+        /* background-color 将由事件动态设置 */
     }
     QLabel {
         color: #495057; /* 深色文字 */
@@ -97,7 +103,7 @@ LIGHT_STYLESHEET = """
 # 深色主题样式表
 DARK_STYLESHEET = """
     QMainWindow {
-        background-color: #202020; /* 深色背景 */
+        /* background-color 将由事件动态设置 */
     }
     QLabel {
         color: #e0e0e0; /* 浅色文字 */
@@ -224,8 +230,8 @@ class AnimatedPushButton(QPushButton):
 class NineSolverGUI(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.current_theme = "light" # 默认主题，会被检测结果覆盖
-        
+        self.current_theme = get_system_theme() # 获取初始系统主题
+        self._theme_initialized = False # 添加一个标志位        
         # 初始化系统托盘
         self.tray_icon = QSystemTrayIcon(self)
         self.ICON_DATA = ICON_DATA  
@@ -249,22 +255,110 @@ class NineSolverGUI(QMainWindow):
         self.setWindowIcon(QIcon(QPixmap.fromImage(QImage.fromData(base64.b64decode(self.ICON_DATA)))))
         self.init_ui()
         self.setup_animations()
-        # 检测并应用主题
-        detected_theme = get_system_theme()
-        self.apply_theme_styling(detected_theme)
+
+        # 连接系统调色板变化信号
+        QApplication.instance().paletteChanged.connect(self.handle_theme_change)
         
+    def showEvent(self, event_obj: QEvent):
+        """窗口第一次显示时，应用完整的主题和正确的背景。"""
+        super().showEvent(event_obj) # 调用父类的 showEvent
+        if not self._theme_initialized:
+            print("showEvent: 首次应用主题")
+            # 此刻窗口应该已经有了正确的激活状态
+            self.apply_theme_styling(self.current_theme) 
+            self._theme_initialized = True
+    def event(self, event_obj: QEvent): # 参数名使用 event_obj，并添加类型提示
+        """
+        重写事件处理器以捕获窗口激活/非激活事件。
+        """
+        if event_obj.type() == QEvent.Type.WindowActivate:
+            # print("窗口激活 - 更新背景") # 调试语句
+            self._update_window_background(is_active=True)
+        elif event_obj.type() == QEvent.Type.WindowDeactivate:
+            # print("窗口非激活 - 更新背景") # 调试语句
+            self._update_window_background(is_active=False)
+        
+        # 确保调用父类的 event 方法，处理所有其他事件
+        return super().event(event_obj)
+
+    def _update_window_background(self, is_active: bool):
+        """
+        根据窗口激活状态和当前系统主题更新 QMainWindow 的背景色。
+        这个方法只更新背景色，不会重新应用整个主题的其他部分。
+        """
+        if not hasattr(self, 'current_theme'): # 确保主题已初始化
+            # print("主题未初始化，无法更新背景")
+            return
+
+        # 根据当前系统主题选择激活/非激活颜色对
+        if self.current_theme == "dark":
+            active_bg = DARK_ACTIVE_BG
+            inactive_bg = DARK_INACTIVE_BG
+            base_stylesheet_template = DARK_STYLESHEET # 用于获取其他样式
+        else: # light theme
+            active_bg = LIGHT_ACTIVE_BG
+            inactive_bg = LIGHT_INACTIVE_BG
+            base_stylesheet_template = LIGHT_STYLESHEET # 用于获取其他样式
+        
+        # 确定新的背景色
+        new_background_color = active_bg if is_active else inactive_bg
+        
+        # 构建仅包含 QMainWindow 背景色的样式字符串
+        main_window_bg_style = f"QMainWindow {{ background-color: {new_background_color}; }}"
+        
+        # 获取当前应用的完整样式表，但移除旧的 QMainWindow 背景色部分（如果存在）
+        # 然后将新的背景色样式与剩余的基础样式合并。
+        # 这里的 base_stylesheet_template 已经不包含 QMainWindow 的背景色定义了。
+        final_stylesheet = f"{main_window_bg_style}\n{base_stylesheet_template}"
+        
+        # print(f"更新背景为: {new_background_color}, 激活: {is_active}") # 调试语句
+        self.setStyleSheet(final_stylesheet)
+        # self.update() # 通常 setStyleSheet 会触发必要的重绘
+
+    # 在 NineSolverGUI 类中
+    def handle_theme_change(self):
+        """处理系统调色板变化事件。"""
+        new_system_theme = get_system_theme()
+        print(f"paletteChanged: 检测到系统主题 {new_system_theme}, 当前GUI主题 {self.current_theme}")
+        if new_system_theme != self.current_theme:
+            print(f"系统主题已更改为: {new_system_theme}。重新应用样式。")
+            self.current_theme = new_system_theme # 更新当前主题记录
+            self.apply_theme_styling(self.current_theme)
+        # 如果只是调色板的其他方面变化而不是浅色/深色模式，我们可能不需要做任何事
+        # 或者，如果窗口已经初始化并显示，我们也可以在这里调用 _update_window_background
+        # 以确保背景色与（可能改变的）激活状态一致，但这通常由 event() 处理。
+        # 此时，更重要的是确保 apply_theme_styling 被调用以切换整体主题。
     def apply_theme_styling(self, theme_name):
-        """应用指定的主题样式表"""
-        if theme_name == "dark":
-            self.setStyleSheet(DARK_STYLESHEET)
-            self.current_theme = "dark"
-        else: # 默认为浅色
-            self.setStyleSheet(LIGHT_STYLESHEET)
-            self.current_theme = "light"
+        """应用指定的主题样式表并设置初始背景色"""
+        print(f"应用主题: {theme_name}")
         
-        # 如果状态栏标签动画颜色依赖主题，可以在这里重新配置或在动画函数中判断
-        # 例如，确保动画停止后颜色正确
-        self.stop_loading_animation() # 会根据 self.current_theme 设置正确颜色
+        base_stylesheet_template = ""
+        active_bg = ""
+        inactive_bg = ""
+
+        if theme_name == "dark":
+            base_stylesheet_template = DARK_STYLESHEET # 这个是除了QMainWindow背景色的其他所有样式
+            self.current_theme = "dark"
+            active_bg = DARK_ACTIVE_BG
+            inactive_bg = DARK_INACTIVE_BG
+        else: 
+            base_stylesheet_template = LIGHT_STYLESHEET # 同上
+            self.current_theme = "light"
+            active_bg = LIGHT_ACTIVE_BG
+            inactive_bg = LIGHT_INACTIVE_BG
+        
+        # 根据当前激活状态选择背景色
+        current_bg_color = active_bg if self.isActiveWindow() else inactive_bg
+        
+        # 构建 QMainWindow 的特定样式
+        main_window_bg_style = f"QMainWindow {{ background-color: {current_bg_color}; }}"
+        
+        # 合并样式
+        final_stylesheet = f"{main_window_bg_style}\n{base_stylesheet_template}"
+        self.setStyleSheet(final_stylesheet)
+
+        self.stop_loading_animation() # 更新状态栏颜色
+        self.update() # 确保UI刷新
     def init_ui(self):
         # 主部件
         central_widget = QWidget()
