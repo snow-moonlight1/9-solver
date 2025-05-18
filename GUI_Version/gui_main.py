@@ -3,14 +3,13 @@ import sys
 from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
                              QLabel, QLineEdit, QPushButton, QTextEdit, QFrame, QSizePolicy, 
                              QSystemTrayIcon, QMenu)
-from PyQt6.QtCore import Qt, QThread, pyqtSignal, QPropertyAnimation, QEasingCurve, QSequentialAnimationGroup, QEvent
+from PyQt6.QtCore import Qt, QThread, pyqtSignal, QPropertyAnimation, QEasingCurve, QSequentialAnimationGroup, QEvent, QRect, QParallelAnimationGroup
 from PyQt6.QtGui import QFont, QIcon, QColor, QPixmap, QPalette, QImage
 from PyQt6.QtWidgets import QGraphicsOpacityEffect
 from main import ImprovedNineExpressionFinder
 from Icon_Data import ICON_DATA
 import time
 import base64
-
 
 def get_system_theme():
     """检测系统主题（浅色或深色）"""
@@ -28,6 +27,22 @@ LIGHT_ACTIVE_BG = "#f0f4f9"
 LIGHT_INACTIVE_BG = "#f3f3f3"
 DARK_ACTIVE_BG = "#1a212d"
 DARK_INACTIVE_BG = "#202020"
+
+LIGHT_STYLESHEET_BASE_COLORS = {
+    "label_color": "#495057",
+    "button_bg": "#4a90e2", # 这是计算按钮的颜色
+}
+DARK_STYLESHEET_ACTIVE_BASE_COLORS = {
+    "main_frame_bg": "#2a3542", # 这是设置页面的深色激活背景
+    "label_color": "#b0c4de",
+    "button_bg": "#4682b4", # 这是计算按钮的颜色
+}
+DARK_STYLESHEET_INACTIVE_BASE_COLORS = {
+    "main_frame_bg": "#262e38", # 这是设置页面的深色非激活背景 (如果需要区分)
+                                # 或者直接用 #2a3542，让它不随主窗口激活状态变
+    "label_color": "#9098a3",
+    "button_bg": "#3e688f", # 这是计算按钮的颜色
+}
 
 # 浅色主题样式表
 LIGHT_STYLESHEET_BASE ="""
@@ -293,6 +308,192 @@ class AnimatedPushButton(QPushButton):
         self.original_geometry = self.geometry()
         super().resizeEvent(event)
 
+class SettingsPage(QWidget):
+    closed = pyqtSignal() # 定义一个关闭信号
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setObjectName("settingsPage")
+        # 设置为无边框窗口部件，并且在父部件之上（如果希望它覆盖其他内容）
+        # 但我们将其作为子部件添加，并用动画控制其显示和位置
+        self.setWindowFlags(Qt.WindowType.FramelessWindowHint | Qt.WindowType.NoDropShadowWindowHint)
+        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground) # 支持透明背景（如果需要圆角）
+        
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(20, 20, 20, 20) # 内边距
+        layout.setSpacing(15)
+
+        self.title_label = QLabel("设置")
+        title_font = QFont()
+        title_font.setPointSize(18)
+        title_font.setBold(True)
+        self.title_label.setFont(title_font)
+        self.title_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        layout.addWidget(self.title_label)
+
+        # --- 这里未来可以添加更多设置项 ---
+        self.placeholder_label = QLabel("这里是设置内容区域...\n未来可以添加更多选项。")
+        self.placeholder_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.placeholder_label.setWordWrap(True)
+        layout.addWidget(self.placeholder_label, 1) # 占据更多空间
+
+        # 关闭按钮
+        self.close_button = QPushButton("关闭")
+        self.close_button.setObjectName("settingsCloseButton")
+        self.close_button.clicked.connect(self.hide_animated) # 连接到隐藏动画
+        layout.addWidget(self.close_button, 0, Qt.AlignmentFlag.AlignHCenter)
+
+        self.hide() # 默认隐藏
+
+        # 动画相关
+        self.animation = QPropertyAnimation(self, b"geometry")
+        self.opacity_animation = QPropertyAnimation(self, b"windowOpacity") # 改为 windowOpacity
+        self.animation_group = QSequentialAnimationGroup(self) # 改为并行，或根据需要调整
+                                                            # 使用 QParallelAnimationGroup 可能更适合同时缩放和淡化
+        self.parallel_anim_group = QParallelAnimationGroup(self)
+        self.parallel_anim_group.addAnimation(self.animation)
+        self.parallel_anim_group.addAnimation(self.opacity_animation)
+
+
+    def show_animated(self):
+        if not self.parentWidget():
+            return
+
+        parent_rect = self.parentWidget().rect()
+        # 目标尺寸 (例如父窗口的 70%)
+        target_width = int(parent_rect.width() * 0.7)
+        target_height = int(parent_rect.height() * 0.6)
+        target_x = parent_rect.center().x() - target_width // 2
+        target_y = parent_rect.center().y() - target_height // 2
+        
+        # 起始尺寸和位置 (中心点，非常小)
+        start_x = parent_rect.center().x()
+        start_y = parent_rect.center().y()
+        
+        self.setGeometry(start_x, start_y, 0, 0) # 初始在中心，大小为0
+        self.setWindowOpacity(0.0) # 初始完全透明
+        self.show()
+        self.raise_() # 确保在最上层
+
+        self.animation.setDuration(300)
+        self.animation.setStartValue(self.geometry())
+        self.animation.setEndValue(QRect(target_x, target_y, target_width, target_height))
+        self.animation.setEasingCurve(QEasingCurve.Type.OutQuad)
+
+        self.opacity_animation.setDuration(250) # 淡入稍快一点
+        self.opacity_animation.setStartValue(0.0)
+        self.opacity_animation.setEndValue(1.0)
+        self.opacity_animation.setEasingCurve(QEasingCurve.Type.Linear)
+
+        self.parallel_anim_group.start()
+
+    def hide_animated(self):
+        if not self.parentWidget():
+            self.hide()
+            self.closed.emit()
+            return
+
+        parent_rect = self.parentWidget().rect()
+        current_geometry = self.geometry()
+
+        # 结束尺寸和位置 (回到中心点，非常小)
+        end_x = parent_rect.center().x()
+        end_y = parent_rect.center().y()
+
+        self.animation.setDuration(250)
+        self.animation.setStartValue(current_geometry)
+        self.animation.setEndValue(QRect(end_x, end_y, 0, 0))
+        self.animation.setEasingCurve(QEasingCurve.Type.InQuad)
+
+        self.opacity_animation.setDuration(300) # 淡出稍慢
+        self.opacity_animation.setStartValue(self.windowOpacity())
+        self.opacity_animation.setEndValue(0.0)
+        self.opacity_animation.setEasingCurve(QEasingCurve.Type.Linear)
+        
+        # 确保动画结束后隐藏并发出信号
+        # QAbstractAnimation.finished信号在动画组完成时发出
+        if self.parallel_anim_group.state() == QParallelAnimationGroup.State.Running:
+             self.parallel_anim_group.stop() # 停止可能正在进行的动画
+
+        # 重新连接 finished 信号以避免多次连接
+        try:
+            self.parallel_anim_group.finished.disconnect(self._on_hide_anim_finished)
+        except TypeError: # 如果之前没有连接过
+            pass
+        self.parallel_anim_group.finished.connect(self._on_hide_anim_finished)
+        
+        self.parallel_anim_group.start()
+
+    def _on_hide_anim_finished(self):
+        self.hide()
+        self.closed.emit()
+        # 断开连接，避免下次 show 时再次触发
+        try:
+            self.parallel_anim_group.finished.disconnect(self._on_hide_anim_finished)
+        except TypeError:
+            pass
+
+    def update_theme_styling(self, main_window_theme, is_main_window_active):
+        bg_color = ""
+        text_color = ""
+        button_bg_color = ""
+        button_text_color = "white"
+
+        if main_window_theme == "dark":
+            bg_color = "#2a3542"  # 深色设置界面固定背景色
+            # 文本和按钮颜色仍然可以根据主窗口激活状态调整，以保持视觉一致性
+            text_color = DARK_STYLESHEET_ACTIVE_BASE_COLORS["label_color"] if is_main_window_active else DARK_STYLESHEET_INACTIVE_BASE_COLORS["label_color"]
+            button_bg_color = DARK_STYLESHEET_ACTIVE_BASE_COLORS["button_bg"] if is_main_window_active else DARK_STYLESHEET_INACTIVE_BASE_COLORS["button_bg"]
+        else: # light
+            bg_color = "#ffffff" # 浅色的设置界面是白色
+            text_color = LIGHT_STYLESHEET_BASE_COLORS["label_color"]
+            button_bg_color = LIGHT_STYLESHEET_BASE_COLORS["button_bg"]
+
+        self.setStyleSheet(f"""
+            #settingsPage {{
+                background-color: {bg_color};
+                border-radius: 8px; /* 给设置页面一些圆角 */
+                border: 1px solid {QColor(bg_color).darker(120).name()}; /* 边框比背景稍暗 */
+            }}
+            #settingsPage QLabel {{ /* 应用于设置页面内的所有 QLabel */
+                color: {text_color};
+            }}
+            #settingsPage QPushButton#settingsCloseButton {{ /* 特定于关闭按钮 */
+                background-color: {button_bg_color};
+                color: {button_text_color};
+                border: none;
+                padding: 8px 12px;
+                border-radius: 4px;
+                font-size: 14px;
+                min-width: 60px;
+                max-width: 80px; /* 与计算按钮一致 */
+            }}
+            #settingsPage QPushButton#settingsCloseButton:hover {{
+                background-color: {QColor(button_bg_color).darker(115).name()};
+            }}
+        """)
+        self.title_label.setStyleSheet(f"color: {text_color};") # 确保标题颜色也更新
+
+# 为了方便 SettingsPage 访问主题颜色，我们可以将颜色提取出来
+# (或者 SettingsPage 在更新时从父窗口获取这些颜色)
+# 这里我先假设我们将颜色值硬编码或通过参数传递
+
+# 在全局范围定义这些，或者作为 NineSolverGUI 的类属性
+LIGHT_STYLESHEET_BASE_COLORS = {
+    "label_color": "#495057",
+    "button_bg": "#4a90e2",
+}
+DARK_STYLESHEET_ACTIVE_BASE_COLORS = {
+    "main_frame_bg": "#2a3542",
+    "label_color": "#b0c4de",
+    "button_bg": "#4682b4",
+}
+DARK_STYLESHEET_INACTIVE_BASE_COLORS = {
+    "main_frame_bg": "#262e38",
+    "label_color": "#9098a3",
+    "button_bg": "#3e688f",
+}
+
 class NineSolverGUI(QMainWindow):
     def __init__(self):
         super().__init__()
@@ -307,6 +508,13 @@ class NineSolverGUI(QMainWindow):
         self._last_elapsed_time = None
         self.tray_icon.setIcon(QIcon(QPixmap.fromImage(QImage.fromData(base64.b64decode(self.ICON_DATA)))))
         
+         # 实例化设置页面，父对象是主窗口的 centralWidget，或者直接是主窗口
+        # 如果父对象是 centralWidget，那么设置页面的坐标就是相对于 centralWidget 的
+        # 如果父对象是 self (QMainWindow)，坐标是相对于 QMainWindow 的
+        # 为了简单起见，先让父对象是 self，我们将在动画中计算相对于主窗口的坐标
+        self.settings_page = SettingsPage(self) # 父对象设为 self
+        self.settings_page.closed.connect(self.on_settings_page_closed)
+
         # 创建托盘菜单
         tray_menu = QMenu()
         show_action = tray_menu.addAction("显示")
@@ -328,7 +536,45 @@ class NineSolverGUI(QMainWindow):
         # 连接系统调色板变化信号
         QApplication.instance().paletteChanged.connect(self.handle_theme_change)
         
-    # 在 NineSolverGUI 类中
+    def toggle_settings_page(self):
+        if self.settings_page.isVisible():
+            self.settings_page.hide_animated()
+            # self.settings_button.setEnabled(True) # 已移到 on_settings_page_closed
+        else:
+            # 在显示设置页面前，确保它的样式是最新的
+            self.settings_page.update_theme_styling(self.current_theme, self.isActiveWindow())
+            self.settings_page.show_animated()
+            self.settings_button.setEnabled(False) # 显示设置时禁用齿轮按钮，防止重复点击
+   
+    def _update_settings_button_style(self):
+        """根据当前主题和激活状态更新设置按钮的颜色。"""
+        if not hasattr(self, 'current_theme'): # 确保主题已初始化
+            return
+
+        is_active = self.isActiveWindow() # 主窗口的激活状态
+        button_color = ""
+        button_hover_color = ""
+
+        if self.current_theme == "dark":
+            # 深色模式下，齿轮颜色跟随 QLabel 的颜色
+            button_color = DARK_STYLESHEET_ACTIVE_BASE_COLORS["label_color"] if is_active else DARK_STYLESHEET_INACTIVE_BASE_COLORS["label_color"]
+            button_hover_color = QColor(button_color).lighter(130).name() # 比基础色亮一点
+        else: # light
+            button_color = LIGHT_STYLESHEET_BASE_COLORS["label_color"] # 与浅色标签颜色一致
+            button_hover_color = "#3a7bc8" # 浅色模式下的特定 hover 颜色
+
+        self.settings_button.setStyleSheet(f"""
+            QPushButton#settingsButton {{
+                font-size: 20px; border: none; background-color: transparent; padding: 0px;
+                color: {button_color};
+            }}
+            QPushButton#settingsButton:hover {{
+                color: {button_hover_color};
+            }}
+        """)
+    def on_settings_page_closed(self):
+        # 当设置页面关闭时，可以做一些事情，比如让齿轮按钮恢复可用
+        self.settings_button.setEnabled(True) 
     def showEvent(self, event_obj: QEvent):
         """窗口第一次显示时，应用完整的主题并强制使用激活样式。"""
         super().showEvent(event_obj) 
@@ -367,8 +613,12 @@ class NineSolverGUI(QMainWindow):
         final_stylesheet = f"{main_window_bg_style}\n{current_base_stylesheet}"
         
         self.setStyleSheet(final_stylesheet)
-        # self.update()
-    # 在 NineSolverGUI 类中
+
+        self._update_settings_button_style()
+        
+        self.settings_page.update_theme_styling(self.current_theme, is_active)
+        #self.update()
+    
     def handle_theme_change(self):
         """处理系统调色板变化事件（通常是浅色/深色模式切换）。"""
         new_system_theme = get_system_theme()
@@ -413,26 +663,24 @@ class NineSolverGUI(QMainWindow):
         main_window_bg_style = f"QMainWindow {{ background-color: {current_main_window_bg}; }}"
         final_stylesheet = f"{main_window_bg_style}\n{current_base_stylesheet}"
         self.setStyleSheet(final_stylesheet)
+
+        self._update_settings_button_style()
         
         # 5. 其他更新
         self.stop_loading_animation()
         self.update() # 通常 setStyleSheet 会处理这个，但为了确保，我们也可以显式调用
         # QApplication.processEvents() # 先注释掉，看是否需要
         self._render_result_display() #主题切换后重新渲染结果
+        self.settings_page.update_theme_styling(self.current_theme, self.isActiveWindow())
+
     def init_ui(self):
-        # 主部件
         central_widget = QWidget()
         self.setCentralWidget(central_widget)
-        
-        # 主布局
         main_layout = QVBoxLayout(central_widget)
         main_layout.setContentsMargins(20, 20, 20, 20)
-        main_layout.setSpacing(20)
-        
-        # 标题区域
-        title_layout = QVBoxLayout()
-        title_layout.setSpacing(10)
-        
+        main_layout.setSpacing(15) # 统一间距
+
+        # 1. 创建 QLabel 实例 (self.title_label, self.description)
         self.title_label = QLabel("⑨ 表达式求解器")
         self.title_label.setObjectName("title_label")
         self.title_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -440,37 +688,55 @@ class NineSolverGUI(QMainWindow):
         title_font.setPointSize(24)
         title_font.setBold(True)
         self.title_label.setFont(title_font)
-        title_layout.addWidget(self.title_label)
-        
+        # 颜色将由全局样式表 NineSolverGUI #title_label 控制
+
         self.description = QLabel("输入一个整数，琪露诺会尝试用9、99、999的加减乘除组合来表示它")
         self.description.setObjectName("description")
         self.description.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        title_layout.addWidget(self.description)
-        main_layout.addLayout(title_layout)
-        
-        # 主内容区域
+        # 颜色将由全局样式表 NineSolverGUI #description 控制
+
+        # 2. 创建设置按钮实例
+        self.settings_button = QPushButton("⚙")
+        self.settings_button.setObjectName("settingsButton")
+        self.settings_button.setFixedSize(32, 32)
+        self.settings_button.clicked.connect(self.toggle_settings_page)
+        # 初始样式，颜色会在主题更新时调整
+        self.settings_button.setStyleSheet("""
+            QPushButton#settingsButton {
+                font-size: 20px; border: none; background-color: transparent; padding: 0px;
+                color: #495057; /* 浅色模式默认 */
+            }
+            QPushButton#settingsButton:hover { color: #3a7bc8; }
+        """)
+
+        # 3. 构建顶部栏布局 (包含标题和设置按钮)
+        top_bar_layout = QHBoxLayout()
+        top_bar_layout.addWidget(self.title_label, 1) # 标题占据伸展空间，默认居中
+        top_bar_layout.addWidget(self.settings_button, 0, Qt.AlignmentFlag.AlignRight) # 设置按钮靠右
+
+        # 4. 将顶部栏和描述添加到主布局
+        main_layout.addLayout(top_bar_layout)
+        main_layout.addWidget(self.description) # 描述在标题栏下方，默认水平拉伸，垂直居中
+
+        # 5. 主内容区域 Frame
         self.main_frame = QWidget()
         self.main_frame.setObjectName("main_frame")
         frame_layout = QVBoxLayout(self.main_frame)
         frame_layout.setContentsMargins(20, 20, 20, 20)
-        frame_layout.setSpacing(20)
-        
+        frame_layout.setSpacing(20) # main_frame 内部的间距
+
         # 输入区域
         input_layout = QHBoxLayout()
         input_layout.setSpacing(10)
-        
         self.input_field = QLineEdit()
         self.input_field.setPlaceholderText("示例: 123, -456, 1e3")
         self.input_field.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         input_layout.addWidget(self.input_field)
-        
         self.calculate_btn = AnimatedPushButton("计算")
         self.calculate_btn.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
         self.calculate_btn.clicked.connect(self.start_calculation)
         input_layout.addWidget(self.calculate_btn)
-        
         frame_layout.addLayout(input_layout)
-        
         
         # 分隔线
         self.separator = QFrame()
@@ -487,16 +753,19 @@ class NineSolverGUI(QMainWindow):
         self.result_display.setReadOnly(True)
         frame_layout.addWidget(self.result_display)
         
-        main_layout.addWidget(self.main_frame)
-        
+        main_layout.addWidget(self.main_frame) # 将包含所有输入输出的 frame 添加到主布局
+
         # 底部状态栏
         self.status_bar = self.statusBar()
         self.status_label = QLabel("就绪")
         self.status_label.setObjectName("status_label")
         self.status_bar.addPermanentWidget(self.status_label)
         
-        # 连接回车键
         self.input_field.returnPressed.connect(self.on_enter_pressed)
+
+        # 在 init_ui 的末尾，或者 apply_theme_styling 第一次被调用时，
+        # 更新 settings_button 的颜色
+        self._update_settings_button_style()
 
         
     def show_result(self, target_str: str, expr: str, elapsed: float): # 添加类型提示
