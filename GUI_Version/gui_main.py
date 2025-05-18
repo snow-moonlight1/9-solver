@@ -514,8 +514,17 @@ class NineSolverGUI(QMainWindow):
         
         # 初始化模糊效果
         self.blur_effect = QGraphicsBlurEffect(self) # 父对象可以是 self
-        self.blur_effect.setBlurRadius(8)  # 设置模糊半径，可以调整
+        self.blur_effect.setBlurRadius(0)  # 设置模糊半径，可以调整
         self.blur_effect.setEnabled(False) # 默认不启用
+
+        # 初始化模糊动画
+        self.blur_animation = QPropertyAnimation(self.blur_effect, b"blurRadius") # <--- 新增
+        # 动画时长可以和设置页面的动画时长协调
+        # SettingsPage 的动画时长是 300ms (show_animated) 和 250ms (hide_animated for geometry)
+        # 我们可以选择一个相近的值，比如 300ms
+        self.blur_animation.setDuration(300) # <--- 新增：动画持续时间
+        self.blur_animation.setEasingCurve(QEasingCurve.Type.OutQuad) # <--- 新增：缓动曲线，与设置页面展开类似
+
 
         # 实例化设置页面，父对象是主窗口的 centralWidget，或者直接是主窗口
         # 如果父对象是 centralWidget，那么设置页面的坐标就是相对于 centralWidget 的
@@ -546,6 +555,9 @@ class NineSolverGUI(QMainWindow):
         QApplication.instance().paletteChanged.connect(self.handle_theme_change)
         
     def toggle_settings_page(self):
+        target_blur_radius = 10 # <--- 定义目标模糊半径，你可以调整这个值
+        animation_duration = 300 # 与 SettingsPage 的 show_animated 动画时长一致
+
         if self.settings_page.isVisible():
             self.settings_page.hide_animated()
             # self.settings_button.setEnabled(True) # 已移到 on_settings_page_closed
@@ -555,6 +567,12 @@ class NineSolverGUI(QMainWindow):
             # 启用模糊效果
             if hasattr(self, 'blur_effect'):
                 self.blur_effect.setEnabled(True)
+                self.blur_animation.stop() # 如果上次动画未完成，先停止
+                self.blur_animation.setDuration(animation_duration)
+                self.blur_animation.setEasingCurve(QEasingCurve.Type.OutQuad) # 展开时的缓动
+                self.blur_animation.setStartValue(self.blur_effect.blurRadius()) # 从当前模糊度开始
+                self.blur_animation.setEndValue(target_blur_radius) # 动画到目标模糊度
+                self.blur_animation.start()
             self.settings_page.show_animated()
             self.settings_button.setEnabled(False) # 显示设置时禁用齿轮按钮，防止重复点击
    
@@ -584,12 +602,42 @@ class NineSolverGUI(QMainWindow):
                 color: {button_hover_color};
             }}
         """)
-    def on_settings_page_closed(self):
-        # 当设置页面关闭时，可以做一些事情，比如让齿轮按钮恢复可用
-        self.settings_button.setEnabled(True)
-        # 禁用模糊效果
+
+    def _on_blur_anim_finished_disable_effect(self):
         if hasattr(self, 'blur_effect'):
-            self.blur_effect.setEnabled(False) 
+            # 检查最终的 blurRadius，确保它确实是0才禁用
+            if self.blur_effect.blurRadius() < 0.1: # 浮点数比较，用一个小阈值
+                self.blur_effect.setEnabled(False)
+        # 断开信号，避免下次动画时重复执行或错误的上下文
+        try:
+            self.blur_animation.finished.disconnect(self._on_blur_anim_finished_disable_effect)
+        except TypeError:
+            pass
+    def on_settings_page_closed(self):
+        self.settings_button.setEnabled(True) 
+        
+        animation_duration_hide = 250 # 与 SettingsPage 的 hide_animated 的 geometry 动画时长一致
+                                    # 或者使用与 opacity 一致的 300ms，看哪个效果更好
+
+        if hasattr(self, 'blur_effect') and hasattr(self, 'blur_animation'):
+            self.blur_animation.stop() # 停止可能正在进行的动画
+            self.blur_animation.setDuration(animation_duration_hide)
+            self.blur_animation.setEasingCurve(QEasingCurve.Type.InQuad) # 收起时的缓动
+            self.blur_animation.setStartValue(self.blur_effect.blurRadius()) # 从当前模糊度开始
+            self.blur_animation.setEndValue(0) # 动画到模糊度为0
+
+            # 当模糊动画完成时，禁用效果器以节省资源
+            # 先断开之前的连接，防止重复连接
+            try:
+                self.blur_animation.finished.disconnect(self._on_blur_anim_finished_disable_effect)
+            except TypeError:
+                pass # 如果没有连接过，会抛出 TypeError
+            self.blur_animation.finished.connect(self._on_blur_anim_finished_disable_effect)
+            
+            self.blur_animation.start()
+        else: # 如果没有动画，立即禁用
+            if hasattr(self, 'blur_effect'):
+                self.blur_effect.setEnabled(False) 
     def showEvent(self, event_obj: QEvent):
         """窗口第一次显示时，应用完整的主题并强制使用激活样式。"""
         super().showEvent(event_obj) 
