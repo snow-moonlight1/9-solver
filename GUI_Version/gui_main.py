@@ -596,12 +596,6 @@ class NineSolverGUI(QMainWindow):
         self.cloned_settings_button.hide() # 默认隐藏
         self.cloned_settings_button.clicked.connect(self.toggle_settings_page) # 点击也触发toggle
 
-        # ---- 新增：克隆按钮的淡入淡出动画 ----
-        self.cloned_button_opacity_effect = QGraphicsOpacityEffect(self.cloned_settings_button)
-        self.cloned_settings_button.setGraphicsEffect(self.cloned_button_opacity_effect)
-        self.cloned_button_fade_animation = QPropertyAnimation(self.cloned_button_opacity_effect, b"opacity")
-        self.cloned_button_fade_animation.setDuration(250) # 与设置页面淡入时间协调
-        self.cloned_button_fade_animation.setEasingCurve(QEasingCurve.Type.Linear)
 
         # 创建托盘菜单
         tray_menu = QMenu()
@@ -647,79 +641,52 @@ class NineSolverGUI(QMainWindow):
         # 确保克隆按钮在最上层 (相对于主窗口内的其他非顶层子部件)
         self.cloned_settings_button.raise_()    
     def toggle_settings_page(self):
-        # 严格检查所有相关动画状态
-        # 检查 settings_page 动画组状态
+        # 检查设置页面动画和模糊动画状态
         settings_page_anim_running = self.settings_page.parallel_anim_group.state() == QParallelAnimationGroup.State.Running
-        # 检查克隆按钮动画状态 (如果属性存在)
-        cloned_button_anim_running = hasattr(self, 'cloned_button_fade_animation') and \
-                                    self.cloned_button_fade_animation.state() == QPropertyAnimation.State.Running
-        # 检查模糊动画状态
         blur_anim_running = self.blur_animation.state() == QPropertyAnimation.State.Running
 
-        if settings_page_anim_running or cloned_button_anim_running or blur_anim_running:
+        # 移除 cloned_button_anim_running 的检查，因为它不再有动画
+        if settings_page_anim_running or blur_anim_running:
             print("Animation in progress, ignoring toggle request.")
             return
 
         target_blur_radius = 10
         animation_duration = 300 
-        button_fade_duration = 200 # 按钮淡化时长
+        # button_fade_duration = 200 # 不再需要
 
-        if hasattr(self, 'cloned_button_fade_animation'):
-            self.cloned_button_fade_animation.setDuration(button_fade_duration)
+        # 移除 self.cloned_button_fade_animation.setDuration(button_fade_duration)
 
         if self.settings_page.isVisible():
             print("Toggle: Settings page is visible, hiding it.")
             self.settings_page.hide_animated() # 这会触发 on_settings_hide_anim_started
 
-            if hasattr(self, 'cloned_button_fade_animation'):
-                self.cloned_button_fade_animation.stop()
-                # 确保从当前透明度开始淡出到0
-                self.cloned_button_fade_animation.setStartValue(self.cloned_button_opacity_effect.opacity())
-                self.cloned_button_fade_animation.setEndValue(0.0)
-                # self.cloned_button_fade_animation.setDirection(QPropertyAnimation.Direction.Backward) # 改用setStart/EndValue
-
-                # 如果克隆按钮当前不可见但我们要“播放”它的淡出（例如通过设置页关闭时）
-                # 需要先确保它在正确位置并设为完全不透明
-                if not self.cloned_settings_button.isVisible() or self.cloned_button_opacity_effect.opacity() < 0.01:
-                    self._synchronize_cloned_button_position() # 确保位置正确
-                    self.cloned_settings_button.show()
-                    self.cloned_button_opacity_effect.setOpacity(1.0)
-                    self.cloned_button_fade_animation.setStartValue(1.0) # 从1开始淡出
-
-                self.cloned_button_fade_animation.start()
-                
-                try:
-                    self.cloned_button_fade_animation.finished.disconnect(self._on_cloned_button_fade_out_finished)
-                except TypeError: pass # 没连接过就算了
-                self.cloned_button_fade_animation.finished.connect(self._on_cloned_button_fade_out_finished)
-            else: # 没有淡出动画，直接处理
-                self._on_cloned_button_fade_out_finished()
+            # ---- 修改：直接隐藏克隆按钮，显示原始按钮 ----
+            if hasattr(self, 'cloned_settings_button'):
+                self.cloned_settings_button.hide()
+            if hasattr(self, 'settings_button'):
+                self.settings_button.setVisible(True)
+            if hasattr(self, 'left_placeholder'):
+                self.left_placeholder.setVisible(True)
+            if hasattr(self, '_update_settings_button_style'): # 确保原始按钮样式正确
+                self._update_settings_button_style()
+            # ---------------------------------------------
+            # 移除所有 self.cloned_button_fade_animation 相关的代码和 finished 连接
 
         else: # Settings page is hidden, show it
             print("Toggle: Settings page is hidden, showing it.")
             
-            self._synchronize_cloned_button() # 更新克隆按钮位置、大小、图标
+            self._synchronize_cloned_button() 
 
             self.settings_button.setVisible(False)
             if hasattr(self, 'left_placeholder'):
-                self.left_placeholder.setVisible(False) # 隐藏左侧占位符以保持标题居中
+                self.left_placeholder.setVisible(False) 
 
             self.cloned_settings_button.show()
-            self.cloned_settings_button.raise_() # 确保它在最前面
-
-            if hasattr(self, 'cloned_button_fade_animation'):
-                self.cloned_button_fade_animation.stop()
-                # 确保从当前透明度开始淡入到1
-                self.cloned_button_fade_animation.setStartValue(self.cloned_button_opacity_effect.opacity())
-                self.cloned_button_fade_animation.setEndValue(1.0)
-                # self.cloned_button_fade_animation.setDirection(QPropertyAnimation.Direction.Forward) # 改用setStart/EndValue
-                if self.cloned_button_opacity_effect.opacity() > 0.99 : # 已经是1
-                    self.cloned_button_opacity_effect.setOpacity(0.0) # 从0开始淡入
-                    self.cloned_button_fade_animation.setStartValue(0.0)
-
-                self.cloned_button_fade_animation.start()
-            else:
-                self.cloned_button_opacity_effect.setOpacity(1.0)
+            self.cloned_settings_button.raise_() 
+            # 移除 self.cloned_button_fade_animation 的启动代码
+            # 如果之前设置了 opacity effect，现在没有动画了，确保它是完全可见的
+            if hasattr(self, 'cloned_button_opacity_effect'):
+                 self.cloned_button_opacity_effect.setOpacity(1.0)
 
 
             self.settings_page.update_theme_styling(self.current_theme, self.isActiveWindow())
@@ -733,29 +700,7 @@ class NineSolverGUI(QMainWindow):
                 self.blur_animation.setEndValue(target_blur_radius)
                 self.blur_animation.start()
             
-            self.settings_page.show_animated()
-
-    def _on_cloned_button_fade_out_finished(self):
-        """克隆按钮淡出动画完成后的处理。"""
-        print("Cloned button fade out finished.")
-        self.cloned_settings_button.hide()
-        # Opacity is already 0 due to animation, no need to reset to 1.0 here for hiding.
-        # self.cloned_button_opacity_effect.setOpacity(1.0) # Resetting to 1 for next 'show' is better done before showing
-
-        if hasattr(self, 'settings_button'):
-            self.settings_button.setVisible(True)
-        if hasattr(self, 'left_placeholder'):
-            self.left_placeholder.setVisible(True) # 显示左侧占位符
-        
-        # 确保原始按钮样式正确
-        if hasattr(self, '_update_settings_button_style'):
-            self._update_settings_button_style() 
-
-        try:
-            if hasattr(self, 'cloned_button_fade_animation'):
-                self.cloned_button_fade_animation.finished.disconnect(self._on_cloned_button_fade_out_finished)
-        except TypeError:
-            pass    
+            self.settings_page.show_animated()   
    
    # 新增槽函数：当设置页面开始隐藏动画时调用
     def on_settings_hide_anim_started(self):
@@ -863,21 +808,11 @@ class NineSolverGUI(QMainWindow):
     def on_settings_page_fully_closed(self): 
         print("Settings page fully closed (potentially via page's own close button).")
         
-        # 检查克隆按钮的淡出动画是否正在运行。如果是，则让它完成。
-        # 这种情况通常是 toggle_settings_page 触发的关闭。
-        if hasattr(self, 'cloned_button_fade_animation') and \
-           self.cloned_button_fade_animation.state() == QPropertyAnimation.State.Running and \
-           self.cloned_button_fade_animation.endValue() < 0.1: # endValue 是 0.0 (淡出)
-            print("Cloned button fade out is already in progress via toggle_settings_page.")
-            return # _on_cloned_button_fade_out_finished 将处理后续
-
-        # 如果克隆按钮是可见的（表示设置页面是通过内部按钮关闭的，或者动画意外未处理）
-        # 并且没有正在进行的淡出动画，则立即恢复原始按钮。
+        # 当设置页面关闭时，总是确保克隆按钮隐藏，原始按钮显示
         if hasattr(self, 'cloned_settings_button') and self.cloned_settings_button.isVisible():
-            print("Settings page closed by its own button, restoring original button immediately.")
             self.cloned_settings_button.hide()
-            if hasattr(self, 'cloned_button_opacity_effect'): # 确保属性存在
-                self.cloned_button_opacity_effect.setOpacity(0.0) # 确保下次淡入从0开始
+            if hasattr(self, 'cloned_button_opacity_effect'): 
+                 self.cloned_button_opacity_effect.setOpacity(1.0) # 重置透明度，以防万一
 
         if hasattr(self, 'settings_button') and not self.settings_button.isVisible():
             self.settings_button.setVisible(True)
@@ -885,7 +820,7 @@ class NineSolverGUI(QMainWindow):
             self.left_placeholder.setVisible(True)
         
         if hasattr(self, '_update_settings_button_style'):
-            self._update_settings_button_style() # 更新原始按钮样式 
+            self._update_settings_button_style()  
     def showEvent(self, event_obj: QEvent):
         """窗口第一次显示时，应用完整的主题并强制使用激活样式。"""
         super().showEvent(event_obj) 
