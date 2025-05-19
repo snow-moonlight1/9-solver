@@ -657,20 +657,15 @@ class NineSolverGUI(QMainWindow):
         # 移除 self.cloned_button_fade_animation.setDuration(button_fade_duration)
 
         if self.settings_page.isVisible():
-            print("Toggle: Settings page is visible, hiding it.")
-            self.settings_page.hide_animated() # 这会触发 on_settings_hide_anim_started
-
-            # ---- 修改：直接隐藏克隆按钮，显示原始按钮 ----
-            if hasattr(self, 'cloned_settings_button'):
-                self.cloned_settings_button.hide()
-            if hasattr(self, 'settings_button'):
-                self.settings_button.setVisible(True)
-            if hasattr(self, 'left_placeholder'):
-                self.left_placeholder.setVisible(True)
-            if hasattr(self, '_update_settings_button_style'): # 确保原始按钮样式正确
-                self._update_settings_button_style()
-            # ---------------------------------------------
-            # 移除所有 self.cloned_button_fade_animation 相关的代码和 finished 连接
+            print("Toggle: Settings page is visible, hiding it (triggered by cloned_button or direct call).")
+            # 只启动设置页面的隐藏动画。
+            # settings_page.hide_animated() 会触发:
+            # 1. self.settings_page.hide_animation_started -> self.on_settings_hide_anim_started (处理模糊消失动画)
+            # 2. settings_page 动画结束后 -> self.settings_page.closed -> self.on_settings_page_fully_closed (处理按钮切换)
+            self.settings_page.hide_animated() 
+            
+            # 克隆按钮保持可见，直到 on_settings_page_fully_closed 中处理
+            # 原始按钮保持隐藏，直到 on_settings_page_fully_closed 中处理
 
         else: # Settings page is hidden, show it
             print("Toggle: Settings page is hidden, showing it.")
@@ -806,21 +801,30 @@ class NineSolverGUI(QMainWindow):
         except TypeError:
             pass
     def on_settings_page_fully_closed(self): 
-        print("Settings page fully closed (potentially via page's own close button).")
+        print("on_settings_page_fully_closed: Settings page animation finished.")
         
-        # 当设置页面关闭时，总是确保克隆按钮隐藏，原始按钮显示
+        # 此处是设置页面几何和透明度动画完成的时间点。
+        # 模糊消失动画可能仍在进行或刚刚完成（通过 on_settings_hide_anim_started 触发）。
+        # 我们现在可以安全地切换按钮了。
+
         if hasattr(self, 'cloned_settings_button') and self.cloned_settings_button.isVisible():
+            print("Hiding cloned_settings_button, showing original settings_button.")
             self.cloned_settings_button.hide()
+            # 重置克隆按钮的透明度（如果之前用了opacity effect但现在没动画了，也无妨）
             if hasattr(self, 'cloned_button_opacity_effect'): 
-                 self.cloned_button_opacity_effect.setOpacity(1.0) # 重置透明度，以防万一
+                 self.cloned_button_opacity_effect.setOpacity(1.0) 
 
         if hasattr(self, 'settings_button') and not self.settings_button.isVisible():
             self.settings_button.setVisible(True)
         if hasattr(self, 'left_placeholder') and not self.left_placeholder.isVisible():
             self.left_placeholder.setVisible(True)
         
+        # 确保原始按钮的样式是最新的（例如，如果窗口激活状态在设置页面显示期间改变了）
         if hasattr(self, '_update_settings_button_style'):
-            self._update_settings_button_style()  
+            self._update_settings_button_style() 
+        
+        # 注意：模糊效果的 setEnabled(False) 是由 _on_blur_anim_finished_disable_effect 单独处理的，
+        # 它会在模糊动画完成后执行。这个时序通常可以接受。  
     def showEvent(self, event_obj: QEvent):
         """窗口第一次显示时，应用完整的主题并强制使用激活样式。"""
         super().showEvent(event_obj) 
