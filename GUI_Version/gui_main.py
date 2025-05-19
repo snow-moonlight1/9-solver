@@ -3,7 +3,7 @@ import sys
 from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
                              QLabel, QLineEdit, QPushButton, QTextEdit, QFrame, QSizePolicy, 
                              QSystemTrayIcon, QMenu, QGraphicsBlurEffect)
-from PyQt6.QtCore import Qt, QThread, pyqtSignal, QPropertyAnimation, QEasingCurve, QSequentialAnimationGroup, QEvent, QRect, QParallelAnimationGroup, QSize
+from PyQt6.QtCore import Qt, QThread, pyqtSignal, QPropertyAnimation, QEasingCurve, QSequentialAnimationGroup, QEvent, QRect, QParallelAnimationGroup, QSize, QTimer
 from PyQt6.QtGui import QFont, QIcon, QColor, QPixmap, QPalette, QImage
 from PyQt6.QtWidgets import QGraphicsOpacityEffect
 
@@ -307,9 +307,52 @@ class AnimatedPushButton(QPushButton):
         self.triggerAnimation()
         super().mousePressEvent(event)
         
-    def resizeEvent(self, event):
-        self.original_geometry = self.geometry()
+    def resizeEvent(self, event: QEvent): 
         super().resizeEvent(event)
+        # 如果窗口大小调整可能影响 settings_button 的大小（虽然现在是固定的）
+        # 或者影响其在布局中的相对位置，进而影响 mapToGlobal
+        if hasattr(self, 'settings_button') and hasattr(self, 'left_placeholder'):
+            # 如果 settings_button 的宽度是动态的，这里需要更新
+            # self.left_placeholder.setFixedWidth(self.settings_button.width())
+            pass # 当前 settings_button 大小固定，init_ui 时已设置 left_placeholder
+
+        # 同步克oned按钮的位置
+        # 只有当设置页面关闭（即原始按钮应该可见）或克隆按钮当前可见时才同步
+        if (hasattr(self, 'settings_button') and self.settings_button.isVisible()) or \
+           (hasattr(self, 'cloned_settings_button') and self.cloned_settings_button.isVisible()):
+            if hasattr(self, '_synchronize_cloned_button_position'):
+                 QTimer.singleShot(0, self._synchronize_cloned_button_position) # 延迟一点确保布局更新
+
+    def _synchronize_cloned_button(self):
+        """将克隆按钮的属性（大小、图标、位置）与原始按钮同步。"""
+        if not hasattr(self, 'settings_button') or not hasattr(self, 'cloned_settings_button'):
+            return
+
+        # 同步大小和IconSize (图标本身由 _update_cloned_button_style 设置)
+        self.cloned_settings_button.setFixedSize(self.settings_button.size())
+        self.cloned_settings_button.setIconSize(self.settings_button.iconSize())
+        
+        self._synchronize_cloned_button_position() # 调用位置同步
+        self._update_cloned_button_style() # 确保图标也同步
+        
+        if self.cloned_settings_button.isVisible(): # 如果克隆按钮应该可见，则确保它在顶层
+            self.cloned_settings_button.raise_()
+
+   # _synchronize_cloned_button 方法也应调用 _synchronize_cloned_button_position
+    # 或者将位置同步逻辑完全放在 _synchronize_cloned_button_position 中，
+    # 而 _synchronize_cloned_button 负责大小和图标。
+    # 我修改一下 _synchronize_cloned_button：
+    def _synchronize_cloned_button(self):
+        """将克隆按钮的属性（大小、图标、位置）与原始按钮同步。"""
+        if not hasattr(self, 'settings_button') or not hasattr(self, 'cloned_settings_button'):
+            return
+
+        self.cloned_settings_button.setFixedSize(self.settings_button.size())
+        self.cloned_settings_button.setIconSize(self.settings_button.iconSize())
+        # 图标由 _update_cloned_button_style 处理
+        
+        self._synchronize_cloned_button_position() # 调用位置同步
+        self.cloned_settings_button.raise_()                  
 
 class SettingsPage(QWidget):
     closed = pyqtSignal() # 定义一个关闭信号
@@ -544,6 +587,22 @@ class NineSolverGUI(QMainWindow):
         self.settings_page.closed.connect(self.on_settings_page_fully_closed)
         self.settings_page.hide_animation_started.connect(self.on_settings_hide_anim_started) # <--- 新增：连接新信号
 
+        # ---- 新增：创建克隆齿轮按钮 ----
+        self.cloned_settings_button = QPushButton(self) # 父对象是主窗口 self
+        self.cloned_settings_button.setObjectName("clonedSettingsButton")
+        # 外观属性将在 init_ui 后，根据原始按钮设置，并由 _update_cloned_button_style 更新
+        self.cloned_settings_button.setFlat(True)
+        self.cloned_settings_button.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.cloned_settings_button.hide() # 默认隐藏
+        self.cloned_settings_button.clicked.connect(self.toggle_settings_page) # 点击也触发toggle
+
+        # ---- 新增：克隆按钮的淡入淡出动画 ----
+        self.cloned_button_opacity_effect = QGraphicsOpacityEffect(self.cloned_settings_button)
+        self.cloned_settings_button.setGraphicsEffect(self.cloned_button_opacity_effect)
+        self.cloned_button_fade_animation = QPropertyAnimation(self.cloned_button_opacity_effect, b"opacity")
+        self.cloned_button_fade_animation.setDuration(250) # 与设置页面淡入时间协调
+        self.cloned_button_fade_animation.setEasingCurve(QEasingCurve.Type.Linear)
+
         # 创建托盘菜单
         tray_menu = QMenu()
         show_action = tray_menu.addAction("显示")
@@ -564,29 +623,139 @@ class NineSolverGUI(QMainWindow):
 
         # 连接系统调色板变化信号
         QApplication.instance().paletteChanged.connect(self.handle_theme_change)
+
+    def _synchronize_cloned_button(self):
+        """将克隆按钮的属性（大小、图标）与原始按钮同步，并设置其初始位置。"""
+        if not hasattr(self, 'settings_button') or not hasattr(self, 'cloned_settings_button'):
+            return
+
+        # 同步大小
+        self.cloned_settings_button.setFixedSize(self.settings_button.size())
+        self.cloned_settings_button.setIconSize(self.settings_button.iconSize())
+
+        # 同步图标 (通过 _update_cloned_button_style 来处理更佳，因为它依赖主题)
+        # self._update_cloned_button_style() # 确保调用它来设置正确的初始图标
+
+        # 计算原始按钮在主窗口中的绝对位置
+        # 需要确保 self.settings_button 已经有正确的几何形状
+        # 这通常在窗口显示后才最准确，但我们可以在 init_ui 后尝试获取
+        # 如果在 init_ui 后立即获取位置不准，可能需要延迟到 showEvent 或第一次 resizeEvent
+        original_button_global_pos = self.settings_button.mapToGlobal(self.settings_button.rect().topLeft())
+        cloned_button_pos_in_main_window = self.mapFromGlobal(original_button_global_pos)
+        self.cloned_settings_button.move(cloned_button_pos_in_main_window)
         
+        # 确保克隆按钮在最上层 (相对于主窗口内的其他非顶层子部件)
+        self.cloned_settings_button.raise_()    
     def toggle_settings_page(self):
-        target_blur_radius = 10 # <--- 定义目标模糊半径，你可以调整这个值
-        animation_duration = 300 # 与 SettingsPage 的 show_animated 动画时长一致
+        # 严格检查所有相关动画状态
+        # 检查 settings_page 动画组状态
+        settings_page_anim_running = self.settings_page.parallel_anim_group.state() == QParallelAnimationGroup.State.Running
+        # 检查克隆按钮动画状态 (如果属性存在)
+        cloned_button_anim_running = hasattr(self, 'cloned_button_fade_animation') and \
+                                    self.cloned_button_fade_animation.state() == QPropertyAnimation.State.Running
+        # 检查模糊动画状态
+        blur_anim_running = self.blur_animation.state() == QPropertyAnimation.State.Running
+
+        if settings_page_anim_running or cloned_button_anim_running or blur_anim_running:
+            print("Animation in progress, ignoring toggle request.")
+            return
+
+        target_blur_radius = 10
+        animation_duration = 300 
+        button_fade_duration = 200 # 按钮淡化时长
+
+        if hasattr(self, 'cloned_button_fade_animation'):
+            self.cloned_button_fade_animation.setDuration(button_fade_duration)
 
         if self.settings_page.isVisible():
-            self.settings_page.hide_animated()
-            # 注意：模糊消失动画的启动现在由 on_settings_hide_anim_started 处理
-        else:
-            # 在显示设置页面前，确保它的样式是最新的
-            self.settings_page.update_theme_styling(self.current_theme, self.isActiveWindow())
+            print("Toggle: Settings page is visible, hiding it.")
+            self.settings_page.hide_animated() # 这会触发 on_settings_hide_anim_started
+
+            if hasattr(self, 'cloned_button_fade_animation'):
+                self.cloned_button_fade_animation.stop()
+                # 确保从当前透明度开始淡出到0
+                self.cloned_button_fade_animation.setStartValue(self.cloned_button_opacity_effect.opacity())
+                self.cloned_button_fade_animation.setEndValue(0.0)
+                # self.cloned_button_fade_animation.setDirection(QPropertyAnimation.Direction.Backward) # 改用setStart/EndValue
+
+                # 如果克隆按钮当前不可见但我们要“播放”它的淡出（例如通过设置页关闭时）
+                # 需要先确保它在正确位置并设为完全不透明
+                if not self.cloned_settings_button.isVisible() or self.cloned_button_opacity_effect.opacity() < 0.01:
+                    self._synchronize_cloned_button_position() # 确保位置正确
+                    self.cloned_settings_button.show()
+                    self.cloned_button_opacity_effect.setOpacity(1.0)
+                    self.cloned_button_fade_animation.setStartValue(1.0) # 从1开始淡出
+
+                self.cloned_button_fade_animation.start()
+                
+                try:
+                    self.cloned_button_fade_animation.finished.disconnect(self._on_cloned_button_fade_out_finished)
+                except TypeError: pass # 没连接过就算了
+                self.cloned_button_fade_animation.finished.connect(self._on_cloned_button_fade_out_finished)
+            else: # 没有淡出动画，直接处理
+                self._on_cloned_button_fade_out_finished()
+
+        else: # Settings page is hidden, show it
+            print("Toggle: Settings page is hidden, showing it.")
             
-            # 启用模糊效果
+            self._synchronize_cloned_button() # 更新克隆按钮位置、大小、图标
+
+            self.settings_button.setVisible(False)
+            if hasattr(self, 'left_placeholder'):
+                self.left_placeholder.setVisible(False) # 隐藏左侧占位符以保持标题居中
+
+            self.cloned_settings_button.show()
+            self.cloned_settings_button.raise_() # 确保它在最前面
+
+            if hasattr(self, 'cloned_button_fade_animation'):
+                self.cloned_button_fade_animation.stop()
+                # 确保从当前透明度开始淡入到1
+                self.cloned_button_fade_animation.setStartValue(self.cloned_button_opacity_effect.opacity())
+                self.cloned_button_fade_animation.setEndValue(1.0)
+                # self.cloned_button_fade_animation.setDirection(QPropertyAnimation.Direction.Forward) # 改用setStart/EndValue
+                if self.cloned_button_opacity_effect.opacity() > 0.99 : # 已经是1
+                    self.cloned_button_opacity_effect.setOpacity(0.0) # 从0开始淡入
+                    self.cloned_button_fade_animation.setStartValue(0.0)
+
+                self.cloned_button_fade_animation.start()
+            else:
+                self.cloned_button_opacity_effect.setOpacity(1.0)
+
+
+            self.settings_page.update_theme_styling(self.current_theme, self.isActiveWindow())
+
             if hasattr(self, 'blur_effect'):
                 self.blur_effect.setEnabled(True)
-                self.blur_animation.stop() # 如果上次动画未完成，先停止
+                self.blur_animation.stop()
                 self.blur_animation.setDuration(animation_duration)
-                self.blur_animation.setEasingCurve(QEasingCurve.Type.OutQuad) # 展开时的缓动
-                self.blur_animation.setStartValue(self.blur_effect.blurRadius()) # 从当前模糊度开始
-                self.blur_animation.setEndValue(target_blur_radius) # 动画到目标模糊度
+                self.blur_animation.setEasingCurve(QEasingCurve.Type.OutQuad)
+                self.blur_animation.setStartValue(self.blur_effect.blurRadius())
+                self.blur_animation.setEndValue(target_blur_radius)
                 self.blur_animation.start()
+            
             self.settings_page.show_animated()
-            #self.settings_button.setEnabled(False) # 显示设置时禁用齿轮按钮，防止重复点击
+
+    def _on_cloned_button_fade_out_finished(self):
+        """克隆按钮淡出动画完成后的处理。"""
+        print("Cloned button fade out finished.")
+        self.cloned_settings_button.hide()
+        # Opacity is already 0 due to animation, no need to reset to 1.0 here for hiding.
+        # self.cloned_button_opacity_effect.setOpacity(1.0) # Resetting to 1 for next 'show' is better done before showing
+
+        if hasattr(self, 'settings_button'):
+            self.settings_button.setVisible(True)
+        if hasattr(self, 'left_placeholder'):
+            self.left_placeholder.setVisible(True) # 显示左侧占位符
+        
+        # 确保原始按钮样式正确
+        if hasattr(self, '_update_settings_button_style'):
+            self._update_settings_button_style() 
+
+        try:
+            if hasattr(self, 'cloned_button_fade_animation'):
+                self.cloned_button_fade_animation.finished.disconnect(self._on_cloned_button_fade_out_finished)
+        except TypeError:
+            pass    
    
    # 新增槽函数：当设置页面开始隐藏动画时调用
     def on_settings_hide_anim_started(self):
@@ -611,6 +780,38 @@ class NineSolverGUI(QMainWindow):
         else: 
             if hasattr(self, 'blur_effect'):
                 self.blur_effect.setEnabled(False)
+    
+    def _update_cloned_button_style(self):
+        """根据当前主题更新克隆设置按钮的图标。"""
+        if not hasattr(self, 'current_theme') or not self._theme_initialized:
+            return
+        if not hasattr(self, 'setting_icon_light') or not hasattr(self, 'setting_icon_dark'):
+            return
+        if not hasattr(self, 'cloned_settings_button'): # 确保克隆按钮存在
+            return
+
+        current_icon = None
+        if self.current_theme == "dark":
+            current_icon = self.setting_icon_dark
+        else: # light
+            current_icon = self.setting_icon_light
+
+        if current_icon:
+            self.cloned_settings_button.setIcon(current_icon)
+        
+        # 克隆按钮也需要基本样式，确保透明无边框
+        self.cloned_settings_button.setStyleSheet("""
+            QPushButton#clonedSettingsButton {
+                border: none;
+                background-color: transparent;
+                padding: 0px;
+            }
+            QPushButton#clonedSettingsButton:hover {
+                /* 与原始按钮的 hover 效果一致或类似 */
+                background-color: rgba(128, 128, 128, 20); 
+            }
+        """)
+
     def _update_settings_button_style(self):
         """根据当前主题更新设置按钮的图标和基本样式。"""
         # 确保主题和图标资源已初始化
@@ -646,6 +847,8 @@ class NineSolverGUI(QMainWindow):
                  /* 半透明灰色 */
             }
         """)
+        if hasattr(self, 'cloned_settings_button') and self.cloned_settings_button.isVisible():
+             self._update_cloned_button_style()
 
     def _on_blur_anim_finished_disable_effect(self):
         if hasattr(self, 'blur_effect'):
@@ -658,12 +861,31 @@ class NineSolverGUI(QMainWindow):
         except TypeError:
             pass
     def on_settings_page_fully_closed(self): 
-        print("Settings page fully closed.") # 调试用
-        self.settings_button.setEnabled(True) 
-        # 注意：模糊效果的禁用现在由 _on_blur_anim_finished_disable_effect 在模糊动画结束后处理
-        # 所以这里不需要再显式调用 self.blur_effect.setEnabled(False)
-        # 如果模糊动画因为某些原因没有运行 (比如效果器不存在)，
-        # 那么 on_settings_hide_anim_started 中的 else 分支会处理禁用。 
+        print("Settings page fully closed (potentially via page's own close button).")
+        
+        # 检查克隆按钮的淡出动画是否正在运行。如果是，则让它完成。
+        # 这种情况通常是 toggle_settings_page 触发的关闭。
+        if hasattr(self, 'cloned_button_fade_animation') and \
+           self.cloned_button_fade_animation.state() == QPropertyAnimation.State.Running and \
+           self.cloned_button_fade_animation.endValue() < 0.1: # endValue 是 0.0 (淡出)
+            print("Cloned button fade out is already in progress via toggle_settings_page.")
+            return # _on_cloned_button_fade_out_finished 将处理后续
+
+        # 如果克隆按钮是可见的（表示设置页面是通过内部按钮关闭的，或者动画意外未处理）
+        # 并且没有正在进行的淡出动画，则立即恢复原始按钮。
+        if hasattr(self, 'cloned_settings_button') and self.cloned_settings_button.isVisible():
+            print("Settings page closed by its own button, restoring original button immediately.")
+            self.cloned_settings_button.hide()
+            if hasattr(self, 'cloned_button_opacity_effect'): # 确保属性存在
+                self.cloned_button_opacity_effect.setOpacity(0.0) # 确保下次淡入从0开始
+
+        if hasattr(self, 'settings_button') and not self.settings_button.isVisible():
+            self.settings_button.setVisible(True)
+        if hasattr(self, 'left_placeholder') and not self.left_placeholder.isVisible():
+            self.left_placeholder.setVisible(True)
+        
+        if hasattr(self, '_update_settings_button_style'):
+            self._update_settings_button_style() # 更新原始按钮样式 
     def showEvent(self, event_obj: QEvent):
         """窗口第一次显示时，应用完整的主题并强制使用激活样式。"""
         super().showEvent(event_obj) 
@@ -671,6 +893,11 @@ class NineSolverGUI(QMainWindow):
             print("showEvent: Applying initial theme (forcing active style).")
             self.apply_theme_styling(self.current_theme, force_active_on_initial_show=True) 
             #self._theme_initialized = True
+        
+        # 使用 QTimer.singleShot 确保在当前事件处理完成后执行，此时布局更稳定
+        if hasattr(self, '_synchronize_cloned_button'): # 确保方法存在
+             QTimer.singleShot(0, self._synchronize_cloned_button)
+
     # 在 NineSolverGUI 类中的 event 方法
     def event(self, event_obj: QEvent):
         if event_obj.type() == QEvent.Type.WindowActivate:
@@ -703,6 +930,7 @@ class NineSolverGUI(QMainWindow):
         self.setStyleSheet(final_stylesheet)
 
         self._update_settings_button_style()
+        self._update_cloned_button_style()
         
         self.settings_page.update_theme_styling(self.current_theme, is_active)
         #self.update()
@@ -759,6 +987,7 @@ class NineSolverGUI(QMainWindow):
         self.setStyleSheet(final_stylesheet)
 
         self._update_settings_button_style()
+        self._update_cloned_button_style()
         
         # 5. 其他更新
         self.stop_loading_animation()
@@ -804,9 +1033,9 @@ class NineSolverGUI(QMainWindow):
 
         # 新增：左侧占位符，用于平衡右侧的设置按钮
         # self.settings_button 的宽度是 32px
-        left_placeholder = QWidget()  # 创建一个空的QWidget作为占位符
-        left_placeholder.setFixedWidth(self.settings_button.width()) # 设置其宽度与 settings_button 一致
-        top_bar_layout.addWidget(left_placeholder) # 将占位符添加到布局的左侧
+        self.left_placeholder = QWidget()  # 创建一个空的QWidget作为占位符
+        self.left_placeholder.setFixedWidth(self.settings_button.width()) # 设置其宽度与 settings_button 一致
+        top_bar_layout.addWidget(self.left_placeholder) # 将占位符添加到布局的左侧
 
         # 标题标签，使其在中间的剩余空间伸展
         # self.title_label 已经设置了setAlignment(Qt.AlignmentFlag.AlignCenter)
