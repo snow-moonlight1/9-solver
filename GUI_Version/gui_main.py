@@ -586,7 +586,7 @@ class NineSolverGUI(QMainWindow):
                 self.blur_animation.setEndValue(target_blur_radius) # 动画到目标模糊度
                 self.blur_animation.start()
             self.settings_page.show_animated()
-            self.settings_button.setEnabled(False) # 显示设置时禁用齿轮按钮，防止重复点击
+            #self.settings_button.setEnabled(False) # 显示设置时禁用齿轮按钮，防止重复点击
    
    # 新增槽函数：当设置页面开始隐藏动画时调用
     def on_settings_hide_anim_started(self):
@@ -632,13 +632,18 @@ class NineSolverGUI(QMainWindow):
         # 为按钮应用基本样式，确保其透明无边框
         self.settings_button.setStyleSheet("""
             QPushButton#settingsButton {
+                min-width: 32px;    /* 强制最小宽度 */
+                min-height: 32px;   /* 强制最小高度 */
+                max-width: 32px;    /* 限制最大宽度 */
+                max-height: 32px;   /* 限制最大高度 */
                 border: none;                   /* 确保无边框 */
                 background-color: transparent;  /* 确保背景透明 */
                 padding: 0px;                   /* 通常 flat 按钮不需要内边距 */
+
             }
             QPushButton#settingsButton:hover {
-                /* 你可以为 hover 状态添加一个细微的背景变化，如果需要的话 */
-                /* 例如: background-color: rgba(128, 128, 128, 20); */ /* 半透明灰色 */
+                background-color: rgba(128, 128, 128, 20); 
+                 /* 半透明灰色 */
             }
         """)
 
@@ -695,7 +700,6 @@ class NineSolverGUI(QMainWindow):
         
         main_window_bg_style = f"QMainWindow {{ background-color: {current_main_window_bg}; }}"
         final_stylesheet = f"{main_window_bg_style}\n{current_base_stylesheet}"
-        
         self.setStyleSheet(final_stylesheet)
 
         self._update_settings_button_style()
