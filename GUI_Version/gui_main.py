@@ -3,11 +3,14 @@ import sys
 from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
                              QLabel, QLineEdit, QPushButton, QTextEdit, QFrame, QSizePolicy, 
                              QSystemTrayIcon, QMenu, QGraphicsBlurEffect)
-from PyQt6.QtCore import Qt, QThread, pyqtSignal, QPropertyAnimation, QEasingCurve, QSequentialAnimationGroup, QEvent, QRect, QParallelAnimationGroup
+from PyQt6.QtCore import Qt, QThread, pyqtSignal, QPropertyAnimation, QEasingCurve, QSequentialAnimationGroup, QEvent, QRect, QParallelAnimationGroup, QSize
 from PyQt6.QtGui import QFont, QIcon, QColor, QPixmap, QPalette, QImage
 from PyQt6.QtWidgets import QGraphicsOpacityEffect
+
 from main import ImprovedNineExpressionFinder
 from Icon_Data import ICON_DATA
+from setting_grey import SETTING_GREY
+from setting_green import SETTING_GREEN
 import time
 import base64
 
@@ -507,13 +510,18 @@ class NineSolverGUI(QMainWindow):
         self._theme_initialized = False # 添加一个标志位        
         # 初始化系统托盘
         self.tray_icon = QSystemTrayIcon(self)
-        self.ICON_DATA = ICON_DATA  
+        self.ICON_DATA = ICON_DATA 
+
         # 新增：存储最后一次成功计算的结果
         self._last_target = None
         self._last_expression = None
         self._last_elapsed_time = None
         self.tray_icon.setIcon(QIcon(QPixmap.fromImage(QImage.fromData(base64.b64decode(self.ICON_DATA)))))
         
+        # 新增：预加载设置图标
+        self.setting_icon_light = QIcon(QPixmap.fromImage(QImage.fromData(base64.b64decode(SETTING_GREY))))
+        self.setting_icon_dark = QIcon(QPixmap.fromImage(QImage.fromData(base64.b64decode(SETTING_GREEN))))
+
         # 初始化模糊效果
         self.blur_effect = QGraphicsBlurEffect(self) # 父对象可以是 self
         self.blur_effect.setBlurRadius(0)  # 设置模糊半径，可以调整
@@ -567,6 +575,7 @@ class NineSolverGUI(QMainWindow):
         else:
             # 在显示设置页面前，确保它的样式是最新的
             self.settings_page.update_theme_styling(self.current_theme, self.isActiveWindow())
+            
             # 启用模糊效果
             if hasattr(self, 'blur_effect'):
                 self.blur_effect.setEnabled(True)
@@ -581,7 +590,7 @@ class NineSolverGUI(QMainWindow):
    
    # 新增槽函数：当设置页面开始隐藏动画时调用
     def on_settings_hide_anim_started(self):
-        # print("Settings hide animation started, starting blur removal animation.") # 调试用
+        print("Settings hide animation started, starting blur removal animation.") # 调试用
         animation_duration_hide = 300 # 与 SettingsPage 的 hide_animated 的 opacity 动画时长一致 (或者 geometry 的 250ms)
                                     # 保持和展开时一致的 300ms 可能更协调
 
@@ -603,30 +612,34 @@ class NineSolverGUI(QMainWindow):
             if hasattr(self, 'blur_effect'):
                 self.blur_effect.setEnabled(False)
     def _update_settings_button_style(self):
-        """根据当前主题和激活状态更新设置按钮的颜色。"""
-        if not hasattr(self, 'current_theme'): # 确保主题已初始化
+        """根据当前主题更新设置按钮的图标和基本样式。"""
+        # 确保主题和图标资源已初始化
+        if not hasattr(self, 'current_theme') or not self._theme_initialized:
+            return # 如果主题未初始化，则不执行任何操作
+        if not hasattr(self, 'setting_icon_light') or not hasattr(self, 'setting_icon_dark'):
+            print("警告: _update_settings_button_style 中设置图标尚未加载。")
             return
 
-        is_active = self.isActiveWindow() # 主窗口的激活状态
-        button_color = ""
-        button_hover_color = ""
-
+        current_icon = None
         if self.current_theme == "dark":
-            # 深色模式下，齿轮颜色跟随 QLabel 的颜色
-            button_color = DARK_STYLESHEET_ACTIVE_BASE_COLORS["label_color"] if is_active else DARK_STYLESHEET_INACTIVE_BASE_COLORS["label_color"]
-            button_hover_color = QColor(button_color).lighter(130).name() # 比基础色亮一点
+            current_icon = self.setting_icon_dark # 深色模式使用 SETTING_GREEN (你命名的绿色图标)
         else: # light
-            button_color = LIGHT_STYLESHEET_BASE_COLORS["label_color"] # 与浅色标签颜色一致
-            button_hover_color = "#3a7bc8" # 浅色模式下的特定 hover 颜色
+            current_icon = self.setting_icon_light # 浅色模式使用 SETTING_GREY (你命名的灰色图标)
 
-        self.settings_button.setStyleSheet(f"""
-            QPushButton#settingsButton {{
-                font-size: 20px; border: none; background-color: transparent; padding: 0px;
-                color: {button_color};
-            }}
-            QPushButton#settingsButton:hover {{
-                color: {button_hover_color};
-            }}
+        if current_icon:
+            self.settings_button.setIcon(current_icon)
+        
+        # 为按钮应用基本样式，确保其透明无边框
+        self.settings_button.setStyleSheet("""
+            QPushButton#settingsButton {
+                border: none;                   /* 确保无边框 */
+                background-color: transparent;  /* 确保背景透明 */
+                padding: 0px;                   /* 通常 flat 按钮不需要内边距 */
+            }
+            QPushButton#settingsButton:hover {
+                /* 你可以为 hover 状态添加一个细微的背景变化，如果需要的话 */
+                /* 例如: background-color: rgba(128, 128, 128, 20); */ /* 半透明灰色 */
+            }
         """)
 
     def _on_blur_anim_finished_disable_effect(self):
@@ -640,7 +653,7 @@ class NineSolverGUI(QMainWindow):
         except TypeError:
             pass
     def on_settings_page_fully_closed(self): 
-        # print("Settings page fully closed.") # 调试用
+        print("Settings page fully closed.") # 调试用
         self.settings_button.setEnabled(True) 
         # 注意：模糊效果的禁用现在由 _on_blur_anim_finished_disable_effect 在模糊动画结束后处理
         # 所以这里不需要再显式调用 self.blur_effect.setEnabled(False)
@@ -652,7 +665,7 @@ class NineSolverGUI(QMainWindow):
         if not self._theme_initialized: # 使用你已有的标志位 _theme_initialized
             print("showEvent: Applying initial theme (forcing active style).")
             self.apply_theme_styling(self.current_theme, force_active_on_initial_show=True) 
-            self._theme_initialized = True
+            #self._theme_initialized = True
     # 在 NineSolverGUI 类中的 event 方法
     def event(self, event_obj: QEvent):
         if event_obj.type() == QEvent.Type.WindowActivate:
@@ -665,7 +678,7 @@ class NineSolverGUI(QMainWindow):
 
     def _update_activation_styles(self, is_active: bool):
         """根据窗口激活状态更新样式（背景色，以及深色模式下的组件）。"""
-        # print(f"_update_activation_styles: Active: {is_active}. Current theme: {self.current_theme}")
+        print(f"_update_activation_styles: Active: {is_active}. Current theme: {self.current_theme}")
         if not hasattr(self, 'current_theme') or not self._theme_initialized: # 确保主题已初始化
             return
 
@@ -708,8 +721,14 @@ class NineSolverGUI(QMainWindow):
     def apply_theme_styling(self, theme_name: str, force_active_on_initial_show: bool = False):
         """应用指定的主题样式表，并根据激活状态设置QMainWindow背景色和组件样式。"""
         
-        # 1. 更新当前主题记录 (确保这是第一步或早期步骤)
-        self.current_theme = theme_name 
+        # 1. 更新当前主题记录
+        self.current_theme = theme_name
+        
+        # 如果是首次强制应用 (通常来自 showEvent), 并且主题尚未标记为已初始化，
+        # 则在此处标记，以确保后续依赖 _theme_initialized 的更新（如按钮图标）能正确执行。
+        if force_active_on_initial_show and not self._theme_initialized:
+            print("apply_theme_styling: Setting _theme_initialized = True for initial load.") # 调试用，可以删除
+            self._theme_initialized = True  # <--- 在这里设置 
         
         # 2. 确定激活状态
         is_active = self.isActiveWindow()
@@ -767,18 +786,13 @@ class NineSolverGUI(QMainWindow):
         # 颜色将由全局样式表 NineSolverGUI #description 控制
 
         # 2. 创建设置按钮实例
-        self.settings_button = QPushButton("⚙")
+        self.settings_button = QPushButton()
         self.settings_button.setObjectName("settingsButton")
         self.settings_button.setFixedSize(32, 32)
+        self.settings_button.setIconSize(QSize(28, 28)) # <--- 新增：图标在按钮内的大小 (你可以调整)
+        self.settings_button.setFlat(True) # <--- 新增：使按钮看起来更像一个图标
+        self.settings_button.setCursor(Qt.CursorShape.PointingHandCursor) # <--- 新增：设置鼠标悬停手势
         self.settings_button.clicked.connect(self.toggle_settings_page)
-        # 初始样式，颜色会在主题更新时调整
-        self.settings_button.setStyleSheet("""
-            QPushButton#settingsButton {
-                font-size: 20px; border: none; background-color: transparent; padding: 0px;
-                color: #495057; /* 浅色模式默认 */
-            }
-            QPushButton#settingsButton:hover { color: #3a7bc8; }
-        """)
 
         # 3. 构建顶部栏布局 (包含标题和设置按钮)
         top_bar_layout = QHBoxLayout()
@@ -787,7 +801,7 @@ class NineSolverGUI(QMainWindow):
         # 新增：左侧占位符，用于平衡右侧的设置按钮
         # self.settings_button 的宽度是 32px
         left_placeholder = QWidget()  # 创建一个空的QWidget作为占位符
-        left_placeholder.setFixedWidth(32) # 设置其宽度与 settings_button 一致
+        left_placeholder.setFixedWidth(self.settings_button.width()) # 设置其宽度与 settings_button 一致
         top_bar_layout.addWidget(left_placeholder) # 将占位符添加到布局的左侧
 
         # 标题标签，使其在中间的剩余空间伸展
