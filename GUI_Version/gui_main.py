@@ -2,9 +2,9 @@
 import sys
 from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
                              QLabel, QLineEdit, QPushButton, QTextEdit, QFrame, QSizePolicy, 
-                             QSystemTrayIcon, QMenu, QGraphicsBlurEffect)
+                             QSystemTrayIcon, QMenu, QGraphicsBlurEffect, QGraphicsOpacityEffect)
 from PyQt6.QtCore import Qt, QThread, pyqtSignal, QPropertyAnimation, QEasingCurve, QSequentialAnimationGroup, QEvent, QRect, QParallelAnimationGroup, QSize, QTimer
-from PyQt6.QtGui import QFont, QIcon, QColor, QPixmap, QPalette, QImage, QTextCursor
+from PyQt6.QtGui import QFont, QIcon, QColor, QPixmap, QPalette, QImage, QTextCursor, QPaintEvent
 
 from main import ImprovedNineExpressionFinder
 from Icon_Data import ICON_DATA
@@ -14,6 +14,7 @@ from fumo import FUMO
 from widgets import CustomSwitch
 import time
 import base64
+import random
 
 def get_system_theme():
     """检测系统主题（浅色或深色）"""
@@ -391,7 +392,9 @@ class SettingsPage(QWidget):
     closed = pyqtSignal() # 定义一个关闭信号
     hide_animation_started = pyqtSignal() # 定义隐藏动画开始信号
     accumulate_setting_changed = pyqtSignal(bool)
-    def __init__(self, parent=None, initial_accumulate_state=False):
+    fumo_easter_egg_changed = pyqtSignal(bool)
+    def __init__(self, parent=None, initial_accumulate_state=False, 
+                 initial_fumo_state=False, fumo_icon_pixmap: QPixmap = None): 
         super().__init__(parent)
         self.setObjectName("settingsPage")
         self.setWindowFlags(Qt.WindowType.FramelessWindowHint | Qt.WindowType.NoDropShadowWindowHint)
@@ -435,22 +438,37 @@ class SettingsPage(QWidget):
         setting_item_layout_1.addWidget(self.accumulate_switch, 0, Qt.AlignmentFlag.AlignRight) # <--- 开关靠右对齐
 
         main_settings_layout.addLayout(setting_item_layout_1)
-        # ------------------------------
         
-        # ---- 你可以在这里添加更多设置项，遵循同样的模式 ----
-        # 例如:
-        # setting_item_layout_2 = QHBoxLayout()
-        # setting_item_layout_2.setContentsMargins(0, 5, 0, 5)
-        # theme_label = QLabel("界面主题:")
-        # setting_item_layout_2.addWidget(theme_label, 1)
-        # theme_combobox = QComboBox() # 假设有一个主题选择框
-        # theme_combobox.addItems(["自动", "浅色", "深色"])
-        # setting_item_layout_2.addWidget(theme_combobox, 0, Qt.AlignmentFlag.AlignRight)
-        # main_settings_layout.addLayout(setting_item_layout_2)
-        # ----------------------------------------------------
+        setting_item_layout_2 = QHBoxLayout()
+        setting_item_layout_2.setContentsMargins(0, 5, 0, 5)
 
-        # 占位符，如果不再需要具体的占位文本，可以移除或者用 addStretch 替代
-        # main_settings_layout.addStretch(1) # 将所有设置项推到上方，底部留空
+        self.fumo_icon_label = QLabel(self) # 用于显示 Fumo 小图标
+        if fumo_icon_pixmap and not fumo_icon_pixmap.isNull():
+            # 缩小 Fumo 图标作为设置项的提示图标
+            icon_size = 24 # 或者 self.accumulate_label.fontMetrics().height()
+            self.fumo_icon_label.setPixmap(fumo_icon_pixmap.scaled(
+                icon_size, icon_size, 
+                Qt.AspectRatioMode.KeepAspectRatio, 
+                Qt.TransformationMode.SmoothTransformation
+            ))
+        else:
+            self.fumo_icon_label.setText("Fumo彩蛋:") # 如果图片加载失败，显示文字
+            fumo_label_font = QFont() # 与 accumulate_label 字体一致
+            fumo_label_font.setPointSize(11)
+            fumo_label_font.setBold(True)
+            self.fumo_icon_label.setFont(fumo_label_font)
+
+        self.fumo_icon_label.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed)
+        setting_item_layout_2.addWidget(self.fumo_icon_label, 1) # 伸展因子为1
+
+        self.fumo_switch = CustomSwitch(self)
+        self.fumo_switch.setChecked(initial_fumo_state)
+        self.fumo_switch.toggled.connect(self.on_fumo_switch_changed)
+        self.fumo_switch.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
+        setting_item_layout_2.addWidget(self.fumo_switch, 0, Qt.AlignmentFlag.AlignRight)
+
+        main_settings_layout.addLayout(setting_item_layout_2)
+
         self.placeholder_label = QLabel("") # 或者保留一个空的，如果以后想显示动态内容
         self.placeholder_label.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         main_settings_layout.addWidget(self.placeholder_label, 1) # 让它占据剩余垂直空间
@@ -473,6 +491,14 @@ class SettingsPage(QWidget):
         self.parallel_anim_group.addAnimation(self.animation)
         self.parallel_anim_group.addAnimation(self.opacity_animation)
 
+    def on_fumo_switch_changed(self, checked): # <--- 新增 Fumo 开关的槽函数
+        """当Fumo开关状态改变时，发出信号。"""
+        self.fumo_easter_egg_changed.emit(checked)
+
+    # set_accumulate_switch_state 方法保持不变
+
+    def set_fumo_switch_state(self, checked): # <--- 新增：从外部设置Fumo开关状态
+        self.fumo_switch.setChecked(checked)
     def on_accumulate_switch_changed(self, checked):
         """当开关状态改变时，发出信号。"""
         self.accumulate_setting_changed.emit(checked)
@@ -631,12 +657,136 @@ DARK_STYLESHEET_INACTIVE_BASE_COLORS = {
     "button_bg": "#3e688f",
 }
 
+class FumoSplash(QWidget):
+    def __init__(self, pixmap: QPixmap, parent_window_geometry: QRect):
+        super().__init__()
+        if pixmap is None or pixmap.isNull():
+            print("FumoSplash: Invalid pixmap provided.")
+            return # 或者抛出异常
+
+        self.pixmap = pixmap
+        self.parent_geo = parent_window_geometry
+
+        # 设置窗口属性：无边框，总在最前，透明背景
+        self.setWindowFlags(
+            Qt.WindowType.FramelessWindowHint | 
+            Qt.WindowType.WindowStaysOnTopHint |
+            Qt.WindowType.SplashScreen # SplashScreen类型通常用于此目的，或者Tool
+        )
+        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
+        self.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose) # 窗口关闭时自动删除对象
+
+        self.label = QLabel(self)
+        self.label.setPixmap(self.pixmap)
+        self.label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        
+        layout = QVBoxLayout(self)
+        layout.addWidget(self.label)
+        self.setLayout(layout)
+
+        self._opacity_effect = QGraphicsOpacityEffect(self)
+        self.setGraphicsEffect(self._opacity_effect)
+        self._opacity_effect.setOpacity(0.0) # 初始完全透明
+
+        self.animation_group = QSequentialAnimationGroup(self)
+        
+        # 动画参数
+        self.fade_in_duration = 200  # 0.2s 淡入
+        self.hold_duration = 100     # 0.1s 保持
+        self.fade_out_duration = 200 # 0.2s 淡出
+
+        self._setup_and_start_animation()
+
+    def _setup_and_start_animation(self):
+        # 1. 淡入动画
+        fade_in_anim = QPropertyAnimation(self._opacity_effect, b"opacity")
+        fade_in_anim.setDuration(self.fade_in_duration)
+        fade_in_anim.setStartValue(0.0)
+        fade_in_anim.setEndValue(1.0)
+        fade_in_anim.setEasingCurve(QEasingCurve.Type.Linear) # 直线
+
+        # 2. 保持阶段 (通过暂停动画实现)
+        # QSequentialAnimationGroup 可以添加 pause
+        
+        # 3. 淡出动画
+        fade_out_anim = QPropertyAnimation(self._opacity_effect, b"opacity")
+        fade_out_anim.setDuration(self.fade_out_duration)
+        fade_out_anim.setStartValue(1.0)
+        fade_out_anim.setEndValue(0.0)
+        fade_out_anim.setEasingCurve(QEasingCurve.Type.Linear) # 直线
+
+        self.animation_group.addAnimation(fade_in_anim)
+        self.animation_group.addPause(self.hold_duration) # 插入暂停
+        self.animation_group.addAnimation(fade_out_anim)
+
+        self.animation_group.finished.connect(self.close) # 动画组完成后关闭窗口
+
+        self._randomize_size_and_position()
+        self.show()
+        self.animation_group.start()
+
+    def _randomize_size_and_position(self):
+        if self.pixmap.isNull():
+            return
+
+        # 随机大小 (例如，原始大小的 0.5 到 1.2 倍)
+        min_scale = 0.5
+        max_scale = 1.0 # 原大小的1倍，可以调整
+        scale_factor = random.uniform(min_scale, max_scale)
+        
+        scaled_width = int(self.pixmap.width() * scale_factor)
+        scaled_height = int(self.pixmap.height() * scale_factor)
+        
+        # 确保最小尺寸，避免太小
+        scaled_width = max(scaled_width, 50) 
+        scaled_height = max(scaled_height, 50)
+
+        self.label.setPixmap(self.pixmap.scaled(scaled_width, scaled_height, 
+                                                Qt.AspectRatioMode.KeepAspectRatio, 
+                                                Qt.TransformationMode.SmoothTransformation))
+        self.resize(scaled_width, scaled_height) # 调整窗口大小以适应图片
+
+        # 随机位置 (在父窗口几何体内)
+        # parent_geo 是主窗口的 geometry()
+        max_x = self.parent_geo.width() - scaled_width
+        max_y = self.parent_geo.height() - scaled_height
+
+        if max_x <= 0 or max_y <= 0: # 如果缩放后比父窗口还大或一样大，则居中
+            rand_x = self.parent_geo.x() + (self.parent_geo.width() - scaled_width) // 2
+            rand_y = self.parent_geo.y() + (self.parent_geo.height() - scaled_height) // 2
+        else:
+            rand_x_offset = random.randint(0, max_x)
+            rand_y_offset = random.randint(0, max_y)
+            # 位置是相对于屏幕的，所以要加上父窗口的左上角坐标
+            rand_x = self.parent_geo.x() + rand_x_offset
+            rand_y = self.parent_geo.y() + rand_y_offset
+            
+        self.move(rand_x, rand_y)
+
+    def paintEvent(self, event: QPaintEvent): # QPaintEvent 需要导入
+        # 由于设置了 WA_TranslucentBackground 和无边框，我们不需要特别绘制背景
+        # QLabel 会绘制它的 pixmap
+        super().paintEvent(event)
+
 class NineSolverGUI(QMainWindow):
     def __init__(self):
         super().__init__()       
         self.current_theme = get_system_theme() # 获取初始系统主题
         self._theme_initialized = False # 添加一个标志位        
         self.accumulate_results = False # 新增：用于控制是否累积结果
+        self.show_fumo_easter_egg = False # <--- 新增：Fumo彩蛋开关状态，默认关闭
+        self.fumo_pixmap = None # <--- 新增：用于存储加载后的Fumo QPixmap
+        # 新增：预加载 Fumo 图片
+        try:
+            fumo_image = QImage.fromData(base64.b64decode(FUMO))
+            if not fumo_image.isNull():
+                self.fumo_pixmap = QPixmap.fromImage(fumo_image)
+                print("Fumo pixmap loaded successfully.")
+            else:
+                print("Failed to load Fumo image from base64 data.")
+        except Exception as e:
+            print(f"Error loading Fumo pixmap: {e}")
+
         # 初始化系统托盘
         self.tray_icon = QSystemTrayIcon(self)
         self.ICON_DATA = ICON_DATA 
@@ -667,11 +817,17 @@ class NineSolverGUI(QMainWindow):
         # 如果父对象是 centralWidget，那么设置页面的坐标就是相对于 centralWidget 的
         # 如果父对象是 self (QMainWindow)，坐标是相对于 QMainWindow 的
         # 为了简单起见，先让父对象是 self，我们将在动画中计算相对于主窗口的坐标
-        self.settings_page = SettingsPage(self) # 父对象设为 self
+        # 实例化设置页面
+        self.settings_page = SettingsPage(
+            self, 
+            initial_accumulate_state=self.accumulate_results,
+            initial_fumo_state=self.show_fumo_easter_egg, # <--- 传递 Fumo 初始状态
+            fumo_icon_pixmap=self.fumo_pixmap             # <--- 传递 Fumo Pixmap 作为图标
+        )
         self.settings_page.closed.connect(self.on_settings_page_fully_closed)
         self.settings_page.hide_animation_started.connect(self.on_settings_hide_anim_started) # <--- 新增：连接新信号
-
         self.settings_page.accumulate_setting_changed.connect(self.on_accumulate_setting_changed)
+        self.settings_page.fumo_easter_egg_changed.connect(self.on_fumo_easter_egg_changed)
         # ---- 新增：创建克隆齿轮按钮 ----
         self.cloned_settings_button = QPushButton(self) # 父对象是主窗口 self
         self.cloned_settings_button.setObjectName("clonedSettingsButton")
@@ -703,6 +859,22 @@ class NineSolverGUI(QMainWindow):
         # 连接系统调色板变化信号
         QApplication.instance().paletteChanged.connect(self.handle_theme_change)
 
+    def on_fumo_easter_egg_changed(self, checked):
+        """处理来自设置页面的Fumo彩蛋设置变化。"""
+        self.show_fumo_easter_egg = checked
+        print(f"Fumo easter egg setting changed to: {self.show_fumo_easter_egg}")
+    def trigger_fumo_splash(self):
+        if not self.show_fumo_easter_egg or self.fumo_pixmap is None or self.fumo_pixmap.isNull():
+            return
+
+        # 获取主窗口当前的几何信息（相对于屏幕）
+        main_window_geometry = self.geometry()
+        
+        # 创建并显示 FumoSplash 实例
+        # FumoSplash 会在动画完成后自动关闭和删除
+        # 我们不需要保留对它的引用，除非想在它显示期间控制它
+        splash = FumoSplash(self.fumo_pixmap, main_window_geometry)
+        # splash.show() # show() 已在 FumoSplash 的 _setup_and_start_animation 中调用
     def on_accumulate_setting_changed(self, checked):
         self.accumulate_results = checked
         print(f"Accumulate results setting changed to: {self.accumulate_results}")
@@ -777,6 +949,9 @@ class NineSolverGUI(QMainWindow):
             # ---- 新增：确保设置页面的开关状态与当前设置同步 ----
             if hasattr(self.settings_page, 'set_accumulate_switch_state'):
                 self.settings_page.set_accumulate_switch_state(self.accumulate_results)
+            # ---- 新增：同步 Fumo 开关状态 ----
+            if hasattr(self.settings_page, 'set_fumo_switch_state'):
+                self.settings_page.set_fumo_switch_state(self.show_fumo_easter_egg)
             self._synchronize_cloned_button() 
 
             self.settings_button.setVisible(False)
@@ -1218,6 +1393,7 @@ class NineSolverGUI(QMainWindow):
             self.status_label.setText(f"计算完成 - 耗时 {elapsed:.2f}秒")
             finder = ImprovedNineExpressionFinder() 
             finder.play_baka_sound()
+            self.trigger_fumo_splash()
         else:
             self.status_label.setText("未找到结果")
 
