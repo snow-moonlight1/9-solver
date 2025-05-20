@@ -660,113 +660,138 @@ DARK_STYLESHEET_INACTIVE_BASE_COLORS = {
 class FumoSplash(QWidget):
     def __init__(self, pixmap: QPixmap, parent_window_geometry: QRect):
         super().__init__()
+        print(f"--- FumoSplash __init__ ---")
         if pixmap is None or pixmap.isNull():
-            print("FumoSplash: Invalid pixmap provided.")
-            return # 或者抛出异常
+            print("  FumoSplash __init__: Invalid pixmap, aborting.")
+            return 
 
+        self.pixmap_original_size = pixmap.size() # 保存原始尺寸以供参考
+        print(f"  FumoSplash __init__: Original pixmap size: {self.pixmap_original_size}")
         self.pixmap = pixmap
         self.parent_geo = parent_window_geometry
 
-        # 设置窗口属性：无边框，总在最前，透明背景
         self.setWindowFlags(
             Qt.WindowType.FramelessWindowHint | 
             Qt.WindowType.WindowStaysOnTopHint |
-            Qt.WindowType.SplashScreen # SplashScreen类型通常用于此目的，或者Tool
+            Qt.WindowType.SplashScreen 
         )
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
-        self.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose) # 窗口关闭时自动删除对象
+        self.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)
 
         self.label = QLabel(self)
-        self.label.setPixmap(self.pixmap)
+        # self.label.setPixmap(self.pixmap) # 推迟到 randomize 中设置缩放后的
         self.label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         
         layout = QVBoxLayout(self)
+        layout.setContentsMargins(0,0,0,0) # 移除边距，让label填满
         layout.addWidget(self.label)
         self.setLayout(layout)
 
         self._opacity_effect = QGraphicsOpacityEffect(self)
         self.setGraphicsEffect(self._opacity_effect)
-        self._opacity_effect.setOpacity(0.0) # 初始完全透明
+        self._opacity_effect.setOpacity(0.0) 
+        print(f"  FumoSplash __init__: Initial opacity set to 0.0")
 
         self.animation_group = QSequentialAnimationGroup(self)
         
-        # 动画参数
-        self.fade_in_duration = 200  # 0.2s 淡入
-        self.hold_duration = 100     # 0.1s 保持
-        self.fade_out_duration = 200 # 0.2s 淡出
+        self.fade_in_duration = 200  
+        self.hold_duration = 100     
+        self.fade_out_duration = 200 
 
+        # 调用 _setup_and_start_animation
+        # QTimer.singleShot(0, self._setup_and_start_animation) # 尝试用singleshot确保窗口系统已准备好
         self._setup_and_start_animation()
 
+
     def _setup_and_start_animation(self):
-        # 1. 淡入动画
+        print(f"--- FumoSplash _setup_and_start_animation ---")
         fade_in_anim = QPropertyAnimation(self._opacity_effect, b"opacity")
         fade_in_anim.setDuration(self.fade_in_duration)
         fade_in_anim.setStartValue(0.0)
         fade_in_anim.setEndValue(1.0)
-        fade_in_anim.setEasingCurve(QEasingCurve.Type.Linear) # 直线
+        fade_in_anim.setEasingCurve(QEasingCurve.Type.Linear)
 
-        # 2. 保持阶段 (通过暂停动画实现)
-        # QSequentialAnimationGroup 可以添加 pause
-        
-        # 3. 淡出动画
         fade_out_anim = QPropertyAnimation(self._opacity_effect, b"opacity")
         fade_out_anim.setDuration(self.fade_out_duration)
         fade_out_anim.setStartValue(1.0)
         fade_out_anim.setEndValue(0.0)
-        fade_out_anim.setEasingCurve(QEasingCurve.Type.Linear) # 直线
+        fade_out_anim.setEasingCurve(QEasingCurve.Type.Linear)
 
         self.animation_group.addAnimation(fade_in_anim)
-        self.animation_group.addPause(self.hold_duration) # 插入暂停
+        self.animation_group.addPause(self.hold_duration) 
         self.animation_group.addAnimation(fade_out_anim)
 
-        self.animation_group.finished.connect(self.close) # 动画组完成后关闭窗口
+        self.animation_group.finished.connect(self._on_animation_finished) # 改为连接到新方法
 
-        self._randomize_size_and_position()
+        print(f"  Calling _randomize_size_and_position...")
+        self._randomize_size_and_position() 
+        print(f"  Geometry after randomize: {self.geometry()}, Label pixmap size: {self.label.pixmap().size() if self.label.pixmap() else 'None'}")
+        
+        print(f"  Calling self.show()...")
         self.show()
+        self.activateWindow() # 尝试激活
+        self.raise_()         # 尝试提升到最前
+
+        print(f"  self.show() called. Is visible: {self.isVisible()}, Opacity effect: {self._opacity_effect.opacity()}")
+        
+        print(f"  Starting animation group...")
         self.animation_group.start()
+        print(f"  Animation group state after start: {self.animation_group.state()}")
+
+    def _on_animation_finished(self):
+        print(f"--- FumoSplash _on_animation_finished --- Closing window.")
+        self.close()
+
 
     def _randomize_size_and_position(self):
+        print(f"--- FumoSplash _randomize_size_and_position ---")
         if self.pixmap.isNull():
+            print("  Pixmap is Null in randomize.")
             return
 
-        # 随机大小 (例如，原始大小的 0.5 到 1.2 倍)
         min_scale = 0.5
-        max_scale = 1.0 # 原大小的1倍，可以调整
+        max_scale = 0.8 # 稍微改小一点最大缩放，原图1024x1024可能太大了
         scale_factor = random.uniform(min_scale, max_scale)
         
-        scaled_width = int(self.pixmap.width() * scale_factor)
-        scaled_height = int(self.pixmap.height() * scale_factor)
+        scaled_width = int(self.pixmap_original_size.width() * scale_factor) # 基于原始尺寸缩放
+        scaled_height = int(self.pixmap_original_size.height() * scale_factor)
         
-        # 确保最小尺寸，避免太小
         scaled_width = max(scaled_width, 50) 
         scaled_height = max(scaled_height, 50)
+        print(f"  Calculated scaled size: {scaled_width}x{scaled_height}")
 
         self.label.setPixmap(self.pixmap.scaled(scaled_width, scaled_height, 
                                                 Qt.AspectRatioMode.KeepAspectRatio, 
                                                 Qt.TransformationMode.SmoothTransformation))
-        self.resize(scaled_width, scaled_height) # 调整窗口大小以适应图片
+        self.resize(scaled_width, scaled_height) 
+        # self.setFixedSize(scaled_width, scaled_height) # 尝试用 FixedSize
 
-        # 随机位置 (在父窗口几何体内)
-        # parent_geo 是主窗口的 geometry()
         max_x = self.parent_geo.width() - scaled_width
         max_y = self.parent_geo.height() - scaled_height
+        print(f"  Parent geo for positioning: W={self.parent_geo.width()} H={self.parent_geo.height()}")
+        print(f"  Max X offset: {max_x}, Max Y offset: {max_y}")
 
-        if max_x <= 0 or max_y <= 0: # 如果缩放后比父窗口还大或一样大，则居中
-            rand_x = self.parent_geo.x() + (self.parent_geo.width() - scaled_width) // 2
-            rand_y = self.parent_geo.y() + (self.parent_geo.height() - scaled_height) // 2
-        else:
+        rand_x_offset = 0
+        rand_y_offset = 0
+
+        if max_x > 0:
             rand_x_offset = random.randint(0, max_x)
+        if max_y > 0:
             rand_y_offset = random.randint(0, max_y)
-            # 位置是相对于屏幕的，所以要加上父窗口的左上角坐标
-            rand_x = self.parent_geo.x() + rand_x_offset
-            rand_y = self.parent_geo.y() + rand_y_offset
+        
+        # 位置是相对于屏幕的，所以要加上父窗口的左上角坐标
+        # parent_geo 是 QRect，它有 x(), y() 方法获取左上角屏幕坐标
+        rand_x_screen = self.parent_geo.x() + rand_x_offset
+        rand_y_screen = self.parent_geo.y() + rand_y_offset
             
-        self.move(rand_x, rand_y)
+        print(f"  Calculated screen position: X={rand_x_screen}, Y={rand_y_screen}")
+        self.move(rand_x_screen, rand_y_screen)
 
-    def paintEvent(self, event: QPaintEvent): # QPaintEvent 需要导入
-        # 由于设置了 WA_TranslucentBackground 和无边框，我们不需要特别绘制背景
-        # QLabel 会绘制它的 pixmap
-        super().paintEvent(event)
+    def paintEvent(self, event: QPaintEvent): 
+        # print("FumoSplash Paint Event") # 可以取消注释以查看是否被频繁调用
+        # super().paintEvent(event) # 对于完全透明的widget，可能不需要调用父类
+        # 如果背景完全透明，QLabel会自己绘制
+        pass # 我们依赖 WA_TranslucentBackground 和 QLabel 来绘制
 
 class NineSolverGUI(QMainWindow):
     def __init__(self):
@@ -864,17 +889,48 @@ class NineSolverGUI(QMainWindow):
         self.show_fumo_easter_egg = checked
         print(f"Fumo easter egg setting changed to: {self.show_fumo_easter_egg}")
     def trigger_fumo_splash(self):
-        if not self.show_fumo_easter_egg or self.fumo_pixmap is None or self.fumo_pixmap.isNull():
+        print(f"--- trigger_fumo_splash called ---") # 调试打印：方法被调用
+        
+        # 检查 Fumo 彩蛋开关状态
+        print(f"  show_fumo_easter_egg: {self.show_fumo_easter_egg}")
+
+        # 检查 Fumo Pixmap 是否有效
+        fumo_pixmap_is_valid = False
+        if hasattr(self, 'fumo_pixmap') and self.fumo_pixmap and not self.fumo_pixmap.isNull():
+            fumo_pixmap_is_valid = True
+            print(f"  fumo_pixmap is valid: True, Size: {self.fumo_pixmap.size()}")
+        else:
+            print(f"  fumo_pixmap is valid: False or not loaded.")
+
+        # 条件判断，如果不满足则不显示 Fumo
+        if not self.show_fumo_easter_egg:
+            print("  Fumo splash not shown: show_fumo_easter_egg is False.")
+            return
+        if not fumo_pixmap_is_valid: # 使用上面计算的布尔值
+            print("  Fumo splash not shown: fumo_pixmap is invalid or not loaded.")
             return
 
         # 获取主窗口当前的几何信息（相对于屏幕）
         main_window_geometry = self.geometry()
+        print(f"  Main window geometry for Fumo: {main_window_geometry}")
         
-        # 创建并显示 FumoSplash 实例
-        # FumoSplash 会在动画完成后自动关闭和删除
-        # 我们不需要保留对它的引用，除非想在它显示期间控制它
-        splash = FumoSplash(self.fumo_pixmap, main_window_geometry)
-        # splash.show() # show() 已在 FumoSplash 的 _setup_and_start_animation 中调用
+        # 检查主窗口是否可见，如果不可见，Fumo 可能也无法正确定位或显示
+        if not self.isVisible():
+            print("  Main window is not visible, Fumo splash might not display correctly.")
+            # return # 可以考虑如果主窗口不可见则不显示Fumo
+
+        print(f"  Attempting to create FumoSplash instance...")
+        try:
+            # 创建 FumoSplash 实例
+            # FumoSplash 会在动画完成后自动关闭和删除
+            # 我们不需要保留对它的引用，除非想在它显示期间立即控制它
+            # (注意：如果 FumoSplash 的 __init__ 可能抛出异常，这里可以 try-except)
+            splash_instance = FumoSplash(self.fumo_pixmap, main_window_geometry)
+            print(f"  FumoSplash instance created: {splash_instance}")
+            # splash_instance.show() is called within FumoSplash's _setup_and_start_animation
+            # 我们需要确保 FumoSplash 的构造函数成功执行到那里
+        except Exception as e:
+            print(f"  Error creating FumoSplash instance: {e}")
     def on_accumulate_setting_changed(self, checked):
         self.accumulate_results = checked
         print(f"Accumulate results setting changed to: {self.accumulate_results}")
