@@ -4,13 +4,13 @@ from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, QH
                              QLabel, QLineEdit, QPushButton, QTextEdit, QFrame, QSizePolicy, 
                              QSystemTrayIcon, QMenu, QGraphicsBlurEffect)
 from PyQt6.QtCore import Qt, QThread, pyqtSignal, QPropertyAnimation, QEasingCurve, QSequentialAnimationGroup, QEvent, QRect, QParallelAnimationGroup, QSize, QTimer
-from PyQt6.QtGui import QFont, QIcon, QColor, QPixmap, QPalette, QImage
-from PyQt6.QtWidgets import QGraphicsOpacityEffect
+from PyQt6.QtGui import QFont, QIcon, QColor, QPixmap, QPalette, QImage, QTextCursor
 
 from main import ImprovedNineExpressionFinder
 from Icon_Data import ICON_DATA
 from setting_grey import SETTING_GREY
 from setting_green import SETTING_GREEN
+from widgets import CustomSwitch
 import time
 import base64
 
@@ -371,8 +371,8 @@ class AnimatedPushButton(QPushButton):
 class SettingsPage(QWidget):
     closed = pyqtSignal() # 定义一个关闭信号
     hide_animation_started = pyqtSignal() # 定义隐藏动画开始信号
-
-    def __init__(self, parent=None):
+    accumulate_setting_changed = pyqtSignal(bool)
+    def __init__(self, parent=None, initial_accumulate_state=False):
         super().__init__(parent)
         self.setObjectName("settingsPage")
         # 设置为无边框窗口部件，并且在父部件之上（如果希望它覆盖其他内容）
@@ -396,11 +396,26 @@ class SettingsPage(QWidget):
         self.title_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(self.title_label)
 
-        # --- 这里未来可以添加更多设置项 ---
-        self.placeholder_label = QLabel("这里是设置内容区域...\n未来可以添加更多选项。")
-        self.placeholder_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.placeholder_label.setWordWrap(True)
-        layout.addWidget(self.placeholder_label, 1) # 占据更多空间
+        # ---- 新增：数据累积开关 ----
+        switch_layout = QHBoxLayout()
+        switch_layout.setSpacing(10)
+        
+        self.accumulate_label = QLabel("累积计算结果:")
+        switch_layout.addWidget(self.accumulate_label)
+        
+        self.accumulate_switch = CustomSwitch(self)
+        self.accumulate_switch.setChecked(initial_accumulate_state) # 设置初始状态
+        self.accumulate_switch.toggled.connect(self.on_accumulate_switch_changed)
+        switch_layout.addWidget(self.accumulate_switch, 0, Qt.AlignmentFlag.AlignLeft) # 让开关靠左，标签占据剩余空间
+        switch_layout.addStretch(1) # 将开关推向左边
+
+        layout.addLayout(switch_layout)
+        # ------------------------------
+
+        self.placeholder_label = QLabel("")
+        self.placeholder_label.setAlignment(Qt.AlignmentFlag.AlignCenter) # 你之前的代码这里可能漏了
+        self.placeholder_label.setWordWrap(True) # 你之前的代码这里可能漏了
+        layout.addWidget(self.placeholder_label, 1)
 
         # 关闭按钮
         self.close_button = QPushButton("关闭")
@@ -419,6 +434,13 @@ class SettingsPage(QWidget):
         self.parallel_anim_group.addAnimation(self.animation)
         self.parallel_anim_group.addAnimation(self.opacity_animation)
 
+    def on_accumulate_switch_changed(self, checked):
+        """当开关状态改变时，发出信号。"""
+        self.accumulate_setting_changed.emit(checked)
+
+    # ---- 新增：一个方法来从外部设置开关状态 (如果需要的话) ----
+    def set_accumulate_switch_state(self, checked):
+        self.accumulate_switch.setChecked(checked)
     def show_animated(self):
         if not self.parentWidget():
             return
@@ -562,9 +584,10 @@ DARK_STYLESHEET_INACTIVE_BASE_COLORS = {
 
 class NineSolverGUI(QMainWindow):
     def __init__(self):
-        super().__init__()
+        super().__init__()       
         self.current_theme = get_system_theme() # 获取初始系统主题
         self._theme_initialized = False # 添加一个标志位        
+        self.accumulate_results = False # 新增：用于控制是否累积结果
         # 初始化系统托盘
         self.tray_icon = QSystemTrayIcon(self)
         self.ICON_DATA = ICON_DATA 
@@ -601,6 +624,7 @@ class NineSolverGUI(QMainWindow):
         self.settings_page.closed.connect(self.on_settings_page_fully_closed)
         self.settings_page.hide_animation_started.connect(self.on_settings_hide_anim_started) # <--- 新增：连接新信号
 
+        self.settings_page.accumulate_setting_changed.connect(self.on_accumulate_setting_changed)
         # ---- 新增：创建克隆齿轮按钮 ----
         self.cloned_settings_button = QPushButton(self) # 父对象是主窗口 self
         self.cloned_settings_button.setObjectName("clonedSettingsButton")
@@ -613,9 +637,9 @@ class NineSolverGUI(QMainWindow):
 
         # 创建托盘菜单
         tray_menu = QMenu()
-        show_action = tray_menu.addAction("显示")
+        show_action = tray_menu.addAction("显示   ")
         show_action.triggered.connect(self.show_normal)
-        quit_action = tray_menu.addAction("退出")
+        quit_action = tray_menu.addAction("退出   ")
         quit_action.triggered.connect(QApplication.instance().quit)
         self.tray_icon.setContextMenu(tray_menu)
         
@@ -632,6 +656,17 @@ class NineSolverGUI(QMainWindow):
         # 连接系统调色板变化信号
         QApplication.instance().paletteChanged.connect(self.handle_theme_change)
 
+    def on_accumulate_setting_changed(self, checked):
+        """处理来自设置页面的累积设置变化。"""
+        self.accumulate_results = checked
+        print(f"Accumulate results setting changed to: {self.accumulate_results}")
+        
+        if not self.accumulate_results: # 如果从累积变为不累积
+            self.result_display.clear() # 清空显示
+            # 可选：如果 _last_target 等有值，可以基于最新的那个重新渲染一次（非累积模式）
+            # if self._last_target:
+            #     self._render_result_display() 
+            # else: # 否则，保持空白
     def _synchronize_cloned_button(self):
         """将克隆按钮的属性（大小、图标）与原始按钮同步，并设置其初始位置。"""
         if not hasattr(self, 'settings_button') or not hasattr(self, 'cloned_settings_button'):
@@ -683,7 +718,9 @@ class NineSolverGUI(QMainWindow):
 
         else: # Settings page is hidden, show it
             print("Toggle: Settings page is hidden, showing it.")
-            
+            # ---- 新增：确保设置页面的开关状态与当前设置同步 ----
+            if hasattr(self.settings_page, 'set_accumulate_switch_state'):
+                self.settings_page.set_accumulate_switch_state(self.accumulate_results)
             self._synchronize_cloned_button() 
 
             self.settings_button.setVisible(False)
@@ -1060,78 +1097,121 @@ class NineSolverGUI(QMainWindow):
         self._update_settings_button_style()
 
         
-    def show_result(self, target_str: str, expr: str, elapsed: float): # 添加类型提示
+    def show_result(self, target_str: str, expr: str, elapsed: float):
         self.stop_loading_animation()
         
-        # 存储结果，以便主题切换时可以重绘
         self._last_target = target_str
         self._last_expression = expr
         self._last_elapsed_time = elapsed
         
-        self._render_result_display() # 调用新的辅助方法来渲染显示
+        # ---- 修改：根据设置决定是清除还是追加 ----
+        if not self.accumulate_results:
+            self.result_display.clear() # 如果不累积，则先清空
+            self._render_result_display() # 然后渲染当前结果
+        else:
+            # 如果是累积模式，并且之前已经有内容，先加一个分隔（可选）
+            if self.result_display.toPlainText().strip(): # 检查是否已有文本
+                # 获取当前文本的HTML，然后在其后追加
+                current_html = self.result_display.toHtml()
+                # 为了避免重复的<html><body>标签，我们需要更智能地追加
+                # 或者，我们每次都重新构建所有累积的HTML内容，但这效率较低
+                # 一个简单的方式是，如果累积，我们直接用 appendHtml (如果 QTextEdit 支持)
+                # 或者用 insertHtml 在光标末尾插入。
+                # QTextEdit 没有 appendHtml，但有 append() 用于纯文本，或 moveCursor+insertHtml
+                
+                # 简单的累积方式：获取新结果的HTML，然后追加
+                # 这需要在 _render_result_display 中做一些调整，使其能返回HTML片段
+                
+                # 让我们暂时用一个简单的方法：在 _render_result_display 内部处理追加逻辑
+                # 或者，让 _render_result_display 返回 HTML，然后在这里处理
+                pass # 稍后我们会在 _render_result_display 中处理追加
 
-        if expr: # 只有成功找到表达式才播放声音和更新状态
+            self._render_result_display() # _render_result_display 现在需要知道是否追加
+        # -----------------------------------------
+
+        if expr: 
             self.status_label.setText(f"计算完成 - 耗时 {elapsed:.2f}秒")
-            finder = ImprovedNineExpressionFinder() # 实例化可以放在外面如果不需要每次新建
+            finder = ImprovedNineExpressionFinder() 
             finder.play_baka_sound()
         else:
             self.status_label.setText("未找到结果")
 
 
     def _render_result_display(self):
-        """根据存储的最后结果和当前主题，重新渲染结果显示区域。"""
-        if self._last_target is None or self._last_expression is None or self._last_elapsed_time is None:
-            self.result_display.clear() # 如果没有结果，清空显示
+        """根据存储的最后结果和当前主题，渲染结果显示区域。
+           如果 self.accumulate_results 为 True，则追加内容。
+        """
+        has_last_result_to_display = not (self._last_target is None or \
+                                          self._last_expression is None or \
+                                          self._last_elapsed_time is None)
+
+        if not has_last_result_to_display:
+            # 如果没有新的有效结果，并且不是累积模式，则清空
+            # 注意：此时不应重置 results_count_for_separator，因为可能只是 WorkerThread 出错，
+            # 而不是用户清除了所有结果。计数器的重置应该在明确的“清除”操作时。
+            if not self.accumulate_results:
+                self.result_display.clear()       
             return
 
         target_str = self._last_target
-        expr = self._last_expression
+        expr_str = self._last_expression 
         elapsed = self._last_elapsed_time
 
-        # --- 统一颜色逻辑 ---
+        # --- 颜色逻辑 (保持不变) ---
+        # ... (之前的颜色逻辑代码块，确保变量名如 html_default_text_color, time_color, expr_html_color, baka_color 正确)
         unified_dark_text_color = ""
-        light_text_color_default = "#212529" # QTextEdit 浅色模式默认文字颜色
-        light_text_color_time = "#6c757d"   # 浅色模式时间颜色
-        light_text_color_expr = "#000000"   # 浅色模式表达式颜色
+        light_text_color_default = "#212529" 
+        light_text_color_time = "#6c757d"   
+        light_text_color_expr_color = "#000000" 
 
         if self.current_theme == "dark":
-            # 深色模式下，所有相关文本（除了baka）都使用同一种颜色，
-            # 该颜色根据激活状态变化
-            if self.isActiveWindow():
-                unified_dark_text_color = "#b0c4de" # 深色激活状态下的统一文本颜色
-            else:
-                unified_dark_text_color = "#a0abb3" # 深色非激活状态下的统一文本颜色
-            
+            if self.isActiveWindow(): unified_dark_text_color = "#b0c4de" 
+            else: unified_dark_text_color = "#a0abb3" 
             html_default_text_color = unified_dark_text_color
             time_color = unified_dark_text_color
-            expr_color_html = unified_dark_text_color
-        else: # light theme
-            html_default_text_color = light_text_color_default # 或 #495057，取决于你QLabel的颜色
+            expr_html_color = unified_dark_text_color 
+        else: 
+            html_default_text_color = light_text_color_default 
             time_color = light_text_color_time
-            expr_color_html = light_text_color_expr
-        
-        # baka_color 保持不变，它是品牌色
+            expr_html_color = light_text_color_expr_color 
         baka_color = "#2c9fff" if self.current_theme == "dark" else "#0165cc"
         # --- 颜色逻辑结束 ---
 
-        if expr: 
-            self.result_display.setHtml(f"""
-                <div style="font-family: Consolas, 'Courier New', monospace; font-size: 14px; color: {html_default_text_color};">
-                    <p>目标: <span style="font-weight: bold;">{target_str}</span></p>
-                    <p>结果 (<span style="color: {time_color};">{elapsed:.2f}秒</span>):</p>
-                    <p><span style="font-weight: bold;">{target_str}</span> = <span style="color: {expr_color_html};">{expr}</span></p>
-                    <p style="color: {baka_color}; font-weight: bold;">baka~</p>
-                </div>
-            """)
+
+        # 构建当前结果的HTML片段 (内部内容)
+        new_result_inner_html = ""
+        is_successful_baka_result = False # 标记这是否是一个包含 "baka~" 的成功结果
+        if expr_str: 
+            new_result_inner_html = f"""
+                <p>目标: <span style="font-weight: bold;">{target_str}</span></p>
+                <p>结果 (<span style="color: {time_color};">{elapsed:.2f}秒</span>):</p>
+                <p><span style="font-weight: bold;">{target_str}</span> = <span style="color: {expr_html_color};">{expr_str}</span></p>
+                <p style="color: {baka_color}; font-weight: bold;">baka~<br><br><br></p>
+            """
+            is_successful_baka_result = True # 这是一个成功的、带baka的块
+        else: # 处理 target 的表达式未找到的情况
+            new_result_inner_html = f"""
+                <p>目标: <span style="font-weight: bold;">{target_str}</span></p>
+                <p>无法找到 {target_str} 的有效表达式</p>
+            """
+            # "未找到" 也算一个主要的结果块，会增加计数器
+            is_successful_baka_result = True # 或者叫 is_primary_result_block
+
+        full_new_result_html = f"""
+            <div style="font-family: Consolas, 'Courier New', monospace; font-size: 14px; color: {html_default_text_color};">
+                {new_result_inner_html}
+            </div>
+        """
+        
+        if self.accumulate_results:
+            self.result_display.moveCursor(QTextCursor.MoveOperation.End)                     
+            self.result_display.moveCursor(QTextCursor.MoveOperation.End)
+            self.result_display.insertHtml(full_new_result_html)
+            
         else:
-            # 当表达式未找到时，也使用统一的颜色（通过QTextEdit的stylesheet实现）
-            # self.result_display.setPlainText(f"无法找到 {target_str} 的有效表达式")
-            # 为了确保颜色与HTML版本一致，这里也用HTML
-            self.result_display.setHtml(f"""
-                <div style="font-family: Consolas, 'Courier New', monospace; font-size: 14px; color: {html_default_text_color};">
-                    <p>无法找到 {target_str} 的有效表达式</p>
-                </div>
-            """)  
+            self.result_display.setHtml(full_new_result_html)
+        self.result_display.moveCursor(QTextCursor.MoveOperation.End)
+        self.result_display.ensureCursorVisible()  
     def on_enter_pressed(self):
         self.calculate_btn.triggerAnimation()
         self.calculate_btn.click()
@@ -1143,12 +1223,15 @@ class NineSolverGUI(QMainWindow):
         self.loading_timer = self.startTimer(500)  # 每500ms切换一次状态
         self.loading_state = 0
         
+    
     def start_calculation(self):
-         # 清空之前的结果，因为要开始新的计算
         self._last_target = None
         self._last_expression = None
         self._last_elapsed_time = None
-        # self.result_display.clear() # 也可以在这里清空显示，或者让 "计算中..." 覆盖
+        
+        if not self.accumulate_results:
+            self.result_display.clear()  
+            
         input_text = self.input_field.text().strip()
         
         if input_text.lower() in ['q', 'quit']:
@@ -1156,32 +1239,56 @@ class NineSolverGUI(QMainWindow):
             return
             
         try:
+            # ---- 恢复/添加 target 的解析和赋值 ----
+            target_value = 0 # 先给一个默认值，或者确保在所有路径都有赋值
+            if not input_text: # 如果输入为空，直接引发ValueError或特定处理
+                raise ValueError("Input is empty") # 或者设置一个默认target/提示用户
+
             if 'e' in input_text.lower():
-                target = int(float(input_text))
+                target_value = int(float(input_text)) 
             else:
-                target = int(input_text)
-                
+                target_value = int(input_text)
+            # ---------------------------------------
+
             self.calculate_btn.setEnabled(False)
-            self.result_display.setPlainText("计算中，请稍候...")
+            # 对于“计算中”的提示，如果是非累积模式，它会覆盖 result_display，
+            # 这时 results_count_for_separator 应该是0。
+            # 如果是累积模式，我们不改变 result_display，所以计数器状态保持。
+            if not self.accumulate_results:
+                self.result_display.setPlainText("计算中，请稍候...") 
+            else:
+                pass # 累积模式下，"计算中"不改变显示内容和计数器 
             self.status_label.setText("正在计算...")
             
-            # 启动加载动画
             self.start_loading_animation()
             
-            # 创建工作线程
-            self.worker = WorkerThread(target)
+            self.worker = WorkerThread(target_value) # <--- 使用解析后的 target_value
             self.worker.result_ready.connect(self.show_result)
             self.worker.error_occurred.connect(self.show_error)
             self.worker.finished.connect(self.cleanup_after_calculation)
             self.worker.start()
             
-        except ValueError:
-            self.result_display.setPlainText("错误: 请输入有效整数或科学计数法(如1e3)")
+        except ValueError as e: # 捕获异常对象以便打印
+            print(f"ValueError during input parsing or processing: {e}") # 调试信息
+            if not self.accumulate_results:
+                self.result_display.setPlainText("错误: 请输入有效整数或科学计数法(如1e3)")
+            else:
+                error_html = f"""
+                <div style="font-family: Consolas, 'Courier New', monospace; font-size: 14px; color: {'#ff6b6b' if self.current_theme == 'dark' else '#d9534f'};">
+                    <p>输入错误: 请输入有效整数或科学计数法 (输入: '{input_text}')</p>
+                </div>
+                """
+                self.result_display.insertHtml(error_html)
+                self.result_display.moveCursor(QTextCursor.MoveOperation.End)
+                self.result_display.ensureCursorVisible()
+
             self.status_label.setText("输入错误")
-            self.input_field.clear()
-            
+            self.input_field.clear() 
             if self.input_field.placeholderText() != "":
                 self.input_field.setPlaceholderText("")
+            # 确保按钮在出错时恢复可用
+            if hasattr(self, 'calculate_btn'):
+                self.calculate_btn.setEnabled(True)
     
     def start_loading_animation(self):
         """状态栏加载动画"""
@@ -1242,11 +1349,24 @@ class NineSolverGUI(QMainWindow):
     
     
     def show_error(self, error_msg):
-        self.result_display.setPlainText(f"错误: {error_msg}")
+        error_html_color = '#ff6b6b' if self.current_theme == 'dark' else '#d9534f'
+        error_display_html = f"""
+            <div style="font-family: Consolas, 'Courier New', monospace; font-size: 14px; color: {error_html_color};">
+                <p>错误: {error_msg}</p>
+            </div>
+        """
+        if self.accumulate_results:         
+            self.result_display.moveCursor(QTextCursor.MoveOperation.End)
+            self.result_display.insertHtml(error_display_html)
+            self.result_display.moveCursor(QTextCursor.MoveOperation.End)
+            self.result_display.ensureCursorVisible()
+            # 错误信息不增加 self.results_count_for_separator
+        else:
+            self.result_display.setHtml(error_display_html)
+
         self.status_label.setText("发生错误")
         self.stop_loading_animation()
 
-        # 清空存储的成功结果，因为这次出错了
         self._last_target = None
         self._last_expression = None
         self._last_elapsed_time = None
