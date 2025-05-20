@@ -297,10 +297,24 @@ class AnimatedPushButton(QPushButton):
         
     def triggerAnimation(self):
         if self.animation_group.state() != QPropertyAnimation.State.Running:
-            self.press_anim.setStartValue(self.original_geometry)
-            self.press_anim.setEndValue(self.original_geometry.adjusted(0, 3, 0, 3))
-            self.release_anim.setStartValue(self.original_geometry.adjusted(0, 3, 0, 3))
-            self.release_anim.setEndValue(self.original_geometry)
+            # 获取按钮当前的几何形状作为动画的基准
+            current_geometry = self.geometry() 
+
+            # 按下动画：按钮向下微移
+            # 创建当前几何形状的副本进行修改
+            pressed_geometry = QRect(current_geometry) 
+            pressed_geometry.translate(0, 2) # 向下移动2像素 (你可以调整这个 '2' 值)
+                                             # 例如，用 1 会更细微，用 3 会更明显
+
+            # 设置按下动画的起止值
+            self.press_anim.setStartValue(current_geometry)
+            self.press_anim.setEndValue(pressed_geometry)
+            
+            # 设置释放动画的起止值
+            self.release_anim.setStartValue(pressed_geometry)
+            self.release_anim.setEndValue(current_geometry) # 恢复到动画开始前的几何形状
+            
+            # 启动动画组
             self.animation_group.start()
             
     def mousePressEvent(self, event):
@@ -1165,6 +1179,9 @@ class NineSolverGUI(QMainWindow):
             self.result_display.setPlainText("错误: 请输入有效整数或科学计数法(如1e3)")
             self.status_label.setText("输入错误")
             self.input_field.clear()
+            
+            if self.input_field.placeholderText() != "":
+                self.input_field.setPlaceholderText("")
     
     def start_loading_animation(self):
         """状态栏加载动画"""
@@ -1215,6 +1232,8 @@ class NineSolverGUI(QMainWindow):
     def cleanup_after_calculation(self):
         """计算完成后清理输入框并恢复按钮状态"""
         self.input_field.clear()
+        if self.input_field.placeholderText() != "": # 检查是否已有占位符，避免不必要的设置
+            self.input_field.setPlaceholderText("") 
         self.calculate_btn.setEnabled(True)
         self.input_field.setFocus()
         
