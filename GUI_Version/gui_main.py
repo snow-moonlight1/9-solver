@@ -1135,15 +1135,6 @@ class NineSolverGUI(QMainWindow):
         else:
             self.status_label.setText("未找到结果")
 
-
-    def _render_result_display(self):
-        """
-        此方法现在是 _render_all_historical_results 的一个别名或触发器，
-        用于在非累积模式或主题更改时渲染。
-        """
-        # 如果是非累积模式，historical_results 应该只包含最新的一个（或没有）
-        # 如果是累积模式，historical_results 包含所有
-        self._render_all_historical_results()  
     def on_enter_pressed(self):
         self.calculate_btn.triggerAnimation()
         self.calculate_btn.click()
@@ -1197,7 +1188,6 @@ class NineSolverGUI(QMainWindow):
             
         try:
             target_value = 0 
-            current_input_for_error = input_text # 保存一下输入，万一出错时用
             if not input_text: 
                 raise ValueError("输入不能为空") 
 
@@ -1312,7 +1302,7 @@ class NineSolverGUI(QMainWindow):
         """
         self.result_display.clear()
         
-        # --- 获取当前主题颜色 (与 _render_result_display 中的逻辑相同) ---
+        # --- 获取当前主题颜色 ---
         unified_dark_text_color = ""
         light_text_color_default = "#212529" 
         light_text_color_time = "#6c757d"   
@@ -1329,29 +1319,24 @@ class NineSolverGUI(QMainWindow):
             time_color = light_text_color_time
             expr_html_color = light_text_color_expr_color 
         baka_color = "#2c9fff" if self.current_theme == "dark" else "#0165cc"
-        hr_color = DARK_STYLESHEET_ACTIVE_BASE_COLORS["label_color"] if self.current_theme == "dark" else LIGHT_STYLESHEET_BASE_COLORS["label_color"]
+        # hr_color 和 visual_separator_html 已被移除
         error_html_color = '#ff6b6b' if self.current_theme == 'dark' else '#d9534f'
         # --- 颜色逻辑结束 ---
 
-        # 定义分隔符HTML (只在累积模式下，并且不是第一个条目之前使用)
-        visual_separator_html = f"<br><hr style='border: none; border-top: 1px solid {hr_color}; margin-top: 8px; margin-bottom: 8px;' /><br>"
-
         for index, entry in enumerate(self.historical_results):
             entry_inner_html = ""
-            is_primary_block_for_separator = False # 标记是否为适合在其后加分隔符的块
 
             if entry['type'] == 'success' or entry['type'] == 'not_found':
                 target_str = entry['target']
-                expr_str = entry.get('expr') # expr 可能为 None 如果是 not_found
+                expr_str = entry.get('expr') 
                 elapsed = entry.get('elapsed', 0.0)
-                is_primary_block_for_separator = True
 
                 if expr_str: # 成功找到表达式
                     entry_inner_html = f"""
                         <p>目标: <span style="font-weight: bold;">{target_str}</span></p>
                         <p>结果 (<span style="color: {time_color};">{elapsed:.2f}秒</span>):</p>
                         <p><span style="font-weight: bold;">{target_str}</span> = <span style="color: {expr_html_color};">{expr_str}</span></p>
-                        <p style="color: {baka_color}; font-weight: bold;">baka~</p>
+                        <p style="color: {baka_color}; font-weight: bold;">baka~<br><br><br></p>
                     """
                 else: # 未找到表达式
                     entry_inner_html = f"""
@@ -1360,56 +1345,31 @@ class NineSolverGUI(QMainWindow):
                     """
             elif entry['type'] == 'error':
                 message = entry['message']
-                # target_str = entry.get('target', "未知操作") # 如果记录了目标
                 entry_inner_html = f"""
                      <p style="color: {error_html_color};">错误: {message}</p>
                 """
-                # 错误信息后是否加分隔符，取决于你是否把它看作一个“主块”
-                # is_primary_block_for_separator = True # 如果希望错误后也有分隔
 
-            # 包装在带样式的div中
-            if entry_inner_html: # 只有当有内容时才包装和添加
+            if entry_inner_html: 
                 full_entry_html = f"""
                     <div style="font-family: Consolas, 'Courier New', monospace; font-size: 14px; color: {html_default_text_color};">
                         {entry_inner_html}
                     </div>
                 """
-                # 插入分隔符的逻辑：
-                # 如果是累积模式，并且这不是第一个条目，则在当前条目之前插入分隔符
-                if self.accumulate_results and index > 0:
-                     self.result_display.insertHtml(visual_separator_html)
-
+                
+                # 确保在追加前光标在末尾 (对于 insertHtml 可能不是严格必须，但 setHtml 后是)
+                self.result_display.moveCursor(QTextCursor.MoveOperation.End)
                 self.result_display.insertHtml(full_entry_html)
+                
+                # ---- 在每个条目后添加一些额外的垂直间距（如果需要的话） ----
+                # 这可以替代之前的 <hr> 分隔符，提供视觉分隔
+                if self.accumulate_results and index < len(self.historical_results) - 1: # 如果不是最后一个条目
+                    self.result_display.moveCursor(QTextCursor.MoveOperation.End)
+                    self.result_display.insertHtml("<br>") # 添加一个或两个换行符作为间距
+                
 
         self.result_display.moveCursor(QTextCursor.MoveOperation.End)
         self.result_display.ensureCursorVisible()
     
-    
-    def show_error(self, error_msg: str): # Add type hint for error_msg
-        # 当WorkerThread报告错误时，我们可能没有一个明确的 'target' 值与之关联
-        # 如果需要，可以修改WorkerThread的error_occurred信号来传递更多上下文
-        # 暂时，我们将错误视为一个独立的条目
-        
-        # 为了与成功结果的结构保持一致，我们可以创建一个类似的条目
-        # target_for_error = self._last_target_attempted or "未知目标" # 需要一种方式获取当前尝试的目标
-        # 假设我们没有简单的 _last_target_attempted，就只记录错误
-        
-        error_entry = {
-            'type': 'error',
-            'message': error_msg
-            # 'target': target_for_error # 可选
-        }
-
-        if self.accumulate_results:
-            self.historical_results.append(error_entry)
-            self._render_all_historical_results()
-        else:
-            self.historical_results = [error_entry] # 只显示当前错误
-            self._render_all_historical_results()
-
-        self.status_label.setText("发生错误")
-        self.stop_loading_animation()
-
     def closeEvent(self, event):
         # 重写关闭事件，最小化到托盘
         self.hide()
