@@ -10,6 +10,7 @@ from main import ImprovedNineExpressionFinder
 from Icon_Data import ICON_DATA
 from setting_grey import SETTING_GREY
 from setting_green import SETTING_GREEN
+from fumo import FUMO
 from widgets import CustomSwitch
 import time
 import base64
