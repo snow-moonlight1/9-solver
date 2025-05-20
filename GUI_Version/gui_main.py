@@ -592,10 +592,8 @@ class NineSolverGUI(QMainWindow):
         self.tray_icon = QSystemTrayIcon(self)
         self.ICON_DATA = ICON_DATA 
 
-        # 新增：存储最后一次成功计算的结果
-        self._last_target = None
-        self._last_expression = None
-        self._last_elapsed_time = None
+        # 新增：存储所有成功计算的结果
+        self.historical_results = []
         self.tray_icon.setIcon(QIcon(QPixmap.fromImage(QImage.fromData(base64.b64decode(self.ICON_DATA)))))
         
         # 新增：预加载设置图标
@@ -657,16 +655,25 @@ class NineSolverGUI(QMainWindow):
         QApplication.instance().paletteChanged.connect(self.handle_theme_change)
 
     def on_accumulate_setting_changed(self, checked):
-        """处理来自设置页面的累积设置变化。"""
         self.accumulate_results = checked
         print(f"Accumulate results setting changed to: {self.accumulate_results}")
         
-        if not self.accumulate_results: # 如果从累积变为不累积
-            self.result_display.clear() # 清空显示
-            # 可选：如果 _last_target 等有值，可以基于最新的那个重新渲染一次（非累积模式）
-            # if self._last_target:
-            #     self._render_result_display() 
-            # else: # 否则，保持空白
+        if not self.accumulate_results: 
+            # 当从累积变为不累积时：
+            last_valid_result = None
+            # 查找最后一个有效的（非错误）结果以保留显示
+            for entry in reversed(self.historical_results):
+                if entry['type'] == 'success' or entry['type'] == 'not_found':
+                    last_valid_result = entry
+                    break
+            
+            self.result_display.clear() 
+            self.historical_results = [] # 清空历史记录
+
+            if last_valid_result:
+                self.historical_results.append(last_valid_result) # 只保留最后一个有效结果
+                self._render_all_historical_results() # 重新渲染这一个
+            # else: 历史中没有有效结果，保持空白
     def _synchronize_cloned_button(self):
         """将克隆按钮的属性（大小、图标）与原始按钮同步，并设置其初始位置。"""
         if not hasattr(self, 'settings_button') or not hasattr(self, 'cloned_settings_button'):
@@ -982,8 +989,14 @@ class NineSolverGUI(QMainWindow):
         # 5. 其他更新
         self.stop_loading_animation()
         self.update() # 通常 setStyleSheet 会处理这个，但为了确保，我们也可以显式调用
-        # QApplication.processEvents() # 先注释掉，看是否需要
-        self._render_result_display() #主题切换后重新渲染结果
+        # ---- 修改：根据累积模式决定如何渲染 ----
+        if self.accumulate_results and self.historical_results:
+            self._render_all_historical_results() # 重绘所有历史记录
+        elif not self.accumulate_results and self.historical_results: # 非累积，但有"最后"一个结果
+            #  _render_all_historical_results 也能处理只渲染一个的情况 (如果列表只有一个元素)
+             self._render_all_historical_results()
+        elif not self.historical_results: # 没有任何结果可显示
+            self.result_display.clear()
         self.settings_page.update_theme_styling(self.current_theme, self.isActiveWindow())
 
     def init_ui(self):
@@ -1097,39 +1110,25 @@ class NineSolverGUI(QMainWindow):
         self._update_settings_button_style()
 
         
-    def show_result(self, target_str: str, expr: str, elapsed: float):
+    def show_result(self, target_str: str, expr_str: str, elapsed: float): # Renamed expr to expr_str
         self.stop_loading_animation()
         
-        self._last_target = target_str
-        self._last_expression = expr
-        self._last_elapsed_time = elapsed
-        
-        # ---- 修改：根据设置决定是清除还是追加 ----
-        if not self.accumulate_results:
-            self.result_display.clear() # 如果不累积，则先清空
-            self._render_result_display() # 然后渲染当前结果
+        new_result_entry = {
+            'target': target_str,
+            'expr': expr_str,
+            'elapsed': elapsed,
+            'type': 'success' if expr_str else 'not_found' 
+        }
+
+        if self.accumulate_results:
+            self.historical_results.append(new_result_entry)
+            self._render_all_historical_results() # 渲染所有累积的结果
         else:
-            # 如果是累积模式，并且之前已经有内容，先加一个分隔（可选）
-            if self.result_display.toPlainText().strip(): # 检查是否已有文本
-                # 获取当前文本的HTML，然后在其后追加
-                current_html = self.result_display.toHtml()
-                # 为了避免重复的<html><body>标签，我们需要更智能地追加
-                # 或者，我们每次都重新构建所有累积的HTML内容，但这效率较低
-                # 一个简单的方式是，如果累积，我们直接用 appendHtml (如果 QTextEdit 支持)
-                # 或者用 insertHtml 在光标末尾插入。
-                # QTextEdit 没有 appendHtml，但有 append() 用于纯文本，或 moveCursor+insertHtml
-                
-                # 简单的累积方式：获取新结果的HTML，然后追加
-                # 这需要在 _render_result_display 中做一些调整，使其能返回HTML片段
-                
-                # 让我们暂时用一个简单的方法：在 _render_result_display 内部处理追加逻辑
-                # 或者，让 _render_result_display 返回 HTML，然后在这里处理
-                pass # 稍后我们会在 _render_result_display 中处理追加
+            # 非累积模式，只显示当前这一个 (可以临时存到historical_results[0]或单独变量)
+            self.historical_results = [new_result_entry] # 或者用独立的 _last_... 变量
+            self._render_all_historical_results() # 也可以调用它，它会清空并只渲染这一个
 
-            self._render_result_display() # _render_result_display 现在需要知道是否追加
-        # -----------------------------------------
-
-        if expr: 
+        if expr_str: 
             self.status_label.setText(f"计算完成 - 耗时 {elapsed:.2f}秒")
             finder = ImprovedNineExpressionFinder() 
             finder.play_baka_sound()
@@ -1138,80 +1137,13 @@ class NineSolverGUI(QMainWindow):
 
 
     def _render_result_display(self):
-        """根据存储的最后结果和当前主题，渲染结果显示区域。
-           如果 self.accumulate_results 为 True，则追加内容。
         """
-        has_last_result_to_display = not (self._last_target is None or \
-                                          self._last_expression is None or \
-                                          self._last_elapsed_time is None)
-
-        if not has_last_result_to_display:
-            # 如果没有新的有效结果，并且不是累积模式，则清空
-            # 注意：此时不应重置 results_count_for_separator，因为可能只是 WorkerThread 出错，
-            # 而不是用户清除了所有结果。计数器的重置应该在明确的“清除”操作时。
-            if not self.accumulate_results:
-                self.result_display.clear()       
-            return
-
-        target_str = self._last_target
-        expr_str = self._last_expression 
-        elapsed = self._last_elapsed_time
-
-        # --- 颜色逻辑 (保持不变) ---
-        # ... (之前的颜色逻辑代码块，确保变量名如 html_default_text_color, time_color, expr_html_color, baka_color 正确)
-        unified_dark_text_color = ""
-        light_text_color_default = "#212529" 
-        light_text_color_time = "#6c757d"   
-        light_text_color_expr_color = "#000000" 
-
-        if self.current_theme == "dark":
-            if self.isActiveWindow(): unified_dark_text_color = "#b0c4de" 
-            else: unified_dark_text_color = "#a0abb3" 
-            html_default_text_color = unified_dark_text_color
-            time_color = unified_dark_text_color
-            expr_html_color = unified_dark_text_color 
-        else: 
-            html_default_text_color = light_text_color_default 
-            time_color = light_text_color_time
-            expr_html_color = light_text_color_expr_color 
-        baka_color = "#2c9fff" if self.current_theme == "dark" else "#0165cc"
-        # --- 颜色逻辑结束 ---
-
-
-        # 构建当前结果的HTML片段 (内部内容)
-        new_result_inner_html = ""
-        is_successful_baka_result = False # 标记这是否是一个包含 "baka~" 的成功结果
-        if expr_str: 
-            new_result_inner_html = f"""
-                <p>目标: <span style="font-weight: bold;">{target_str}</span></p>
-                <p>结果 (<span style="color: {time_color};">{elapsed:.2f}秒</span>):</p>
-                <p><span style="font-weight: bold;">{target_str}</span> = <span style="color: {expr_html_color};">{expr_str}</span></p>
-                <p style="color: {baka_color}; font-weight: bold;">baka~<br><br><br></p>
-            """
-            is_successful_baka_result = True # 这是一个成功的、带baka的块
-        else: # 处理 target 的表达式未找到的情况
-            new_result_inner_html = f"""
-                <p>目标: <span style="font-weight: bold;">{target_str}</span></p>
-                <p>无法找到 {target_str} 的有效表达式</p>
-            """
-            # "未找到" 也算一个主要的结果块，会增加计数器
-            is_successful_baka_result = True # 或者叫 is_primary_result_block
-
-        full_new_result_html = f"""
-            <div style="font-family: Consolas, 'Courier New', monospace; font-size: 14px; color: {html_default_text_color};">
-                {new_result_inner_html}
-            </div>
+        此方法现在是 _render_all_historical_results 的一个别名或触发器，
+        用于在非累积模式或主题更改时渲染。
         """
-        
-        if self.accumulate_results:
-            self.result_display.moveCursor(QTextCursor.MoveOperation.End)                     
-            self.result_display.moveCursor(QTextCursor.MoveOperation.End)
-            self.result_display.insertHtml(full_new_result_html)
-            
-        else:
-            self.result_display.setHtml(full_new_result_html)
-        self.result_display.moveCursor(QTextCursor.MoveOperation.End)
-        self.result_display.ensureCursorVisible()  
+        # 如果是非累积模式，historical_results 应该只包含最新的一个（或没有）
+        # 如果是累积模式，historical_results 包含所有
+        self._render_all_historical_results()  
     def on_enter_pressed(self):
         self.calculate_btn.triggerAnimation()
         self.calculate_btn.click()
@@ -1223,70 +1155,96 @@ class NineSolverGUI(QMainWindow):
         self.loading_timer = self.startTimer(500)  # 每500ms切换一次状态
         self.loading_state = 0
         
+    def on_worker_error(self, error_msg: str):
+        """
+        处理来自 WorkerThread 的错误信号。
+        将错误信息添加到历史记录并更新显示。
+        """
+        print(f"WorkerThread error: {error_msg}")
+
+        error_entry = {
+            'type': 'error',
+            'message': error_msg
+            # 如果 WorkerThread 的 error_occurred 信号也发送了 target，可以在这里添加
+            # 'target': target_from_signal 
+        }
+
+        if self.accumulate_results:
+            self.historical_results.append(error_entry)
+        else:
+            # 非累积模式，错误会覆盖之前的内容
+            self.historical_results = [error_entry] 
+        
+        self._render_all_historical_results() # 使用新的渲染方法
+
+        self.status_label.setText("计算发生错误") # 或者更具体的错误提示
+        self.stop_loading_animation()
+        
+        # 确保按钮在出错时恢复可用 (cleanup_after_calculation 也会做这个，但这里再做一次也无妨)
+        if hasattr(self, 'calculate_btn') and not self.calculate_btn.isEnabled():
+            self.calculate_btn.setEnabled(True)    
     
     def start_calculation(self):
-        self._last_target = None
-        self._last_expression = None
-        self._last_elapsed_time = None
+        # 不再单独管理 _last_target 等，它们会作为新条目进入 historical_results
         
         if not self.accumulate_results:
-            self.result_display.clear()  
+            self.result_display.clear()
+            self.historical_results = [] # <--- 清空历史记录
             
         input_text = self.input_field.text().strip()
         
-        if input_text.lower() in ['q', 'quit']:
-            self.close()
-            return
+        # ... (quit logic) ...
             
         try:
-            # ---- 恢复/添加 target 的解析和赋值 ----
-            target_value = 0 # 先给一个默认值，或者确保在所有路径都有赋值
-            if not input_text: # 如果输入为空，直接引发ValueError或特定处理
-                raise ValueError("Input is empty") # 或者设置一个默认target/提示用户
+            target_value = 0 
+            current_input_for_error = input_text # 保存一下输入，万一出错时用
+            if not input_text: 
+                raise ValueError("输入不能为空") 
 
             if 'e' in input_text.lower():
                 target_value = int(float(input_text)) 
             else:
                 target_value = int(input_text)
-            # ---------------------------------------
-
-            self.calculate_btn.setEnabled(False)
-            # 对于“计算中”的提示，如果是非累积模式，它会覆盖 result_display，
-            # 这时 results_count_for_separator 应该是0。
-            # 如果是累积模式，我们不改变 result_display，所以计数器状态保持。
-            if not self.accumulate_results:
-                self.result_display.setPlainText("计算中，请稍候...") 
-            else:
-                pass # 累积模式下，"计算中"不改变显示内容和计数器 
-            self.status_label.setText("正在计算...")
             
+            self.calculate_btn.setEnabled(False)
+            
+            # "计算中..." 的提示处理
+            if not self.accumulate_results:
+                self.result_display.setPlainText("计算中，请稍候...")
+            else:
+                # 累积模式下，我们不显示“计算中”，因为会覆盖历史。
+                # 用户会看到旧内容，直到新结果追加。
+                pass
+                
+            self.status_label.setText("正在计算...")
             self.start_loading_animation()
             
-            self.worker = WorkerThread(target_value) # <--- 使用解析后的 target_value
+            # 记录当前正在尝试计算的目标，以便出错时可以引用 (可选)
+            # self._currently_calculating_target = str(target_value) 
+
+            self.worker = WorkerThread(target_value)
             self.worker.result_ready.connect(self.show_result)
-            self.worker.error_occurred.connect(self.show_error)
+            self.worker.error_occurred.connect(self.on_worker_error) # <--- 改用新槽函数
             self.worker.finished.connect(self.cleanup_after_calculation)
             self.worker.start()
             
-        except ValueError as e: # 捕获异常对象以便打印
-            print(f"ValueError during input parsing or processing: {e}") # 调试信息
-            if not self.accumulate_results:
-                self.result_display.setPlainText("错误: 请输入有效整数或科学计数法(如1e3)")
+        except ValueError as e: 
+            print(f"ValueError during input parsing: {e}")
+            # 将输入解析错误也记录到历史（如果需要）
+            error_entry = {
+                'type': 'error',
+                'message': f"输入无效"
+            }
+            if self.accumulate_results:
+                self.historical_results.append(error_entry)
             else:
-                error_html = f"""
-                <div style="font-family: Consolas, 'Courier New', monospace; font-size: 14px; color: {'#ff6b6b' if self.current_theme == 'dark' else '#d9534f'};">
-                    <p>输入错误: 请输入有效整数或科学计数法 (输入: '{input_text}')</p>
-                </div>
-                """
-                self.result_display.insertHtml(error_html)
-                self.result_display.moveCursor(QTextCursor.MoveOperation.End)
-                self.result_display.ensureCursorVisible()
+                self.historical_results = [error_entry]
+            self._render_all_historical_results() # 显示错误
 
             self.status_label.setText("输入错误")
             self.input_field.clear() 
             if self.input_field.placeholderText() != "":
                 self.input_field.setPlaceholderText("")
-            # 确保按钮在出错时恢复可用
             if hasattr(self, 'calculate_btn'):
                 self.calculate_btn.setEnabled(True)
     
@@ -1346,30 +1304,111 @@ class NineSolverGUI(QMainWindow):
         
         # 停止加载动画
         self.stop_loading_animation()
-    
-    
-    def show_error(self, error_msg):
-        error_html_color = '#ff6b6b' if self.current_theme == 'dark' else '#d9534f'
-        error_display_html = f"""
-            <div style="font-family: Consolas, 'Courier New', monospace; font-size: 14px; color: {error_html_color};">
-                <p>错误: {error_msg}</p>
-            </div>
+
+    def _render_all_historical_results(self):
         """
-        if self.accumulate_results:         
-            self.result_display.moveCursor(QTextCursor.MoveOperation.End)
-            self.result_display.insertHtml(error_display_html)
-            self.result_display.moveCursor(QTextCursor.MoveOperation.End)
-            self.result_display.ensureCursorVisible()
-            # 错误信息不增加 self.results_count_for_separator
+        清空结果显示区域，并根据 self.historical_results 中的所有条目
+        和当前主题重新渲染内容。
+        """
+        self.result_display.clear()
+        
+        # --- 获取当前主题颜色 (与 _render_result_display 中的逻辑相同) ---
+        unified_dark_text_color = ""
+        light_text_color_default = "#212529" 
+        light_text_color_time = "#6c757d"   
+        light_text_color_expr_color = "#000000" 
+
+        if self.current_theme == "dark":
+            if self.isActiveWindow(): unified_dark_text_color = "#b0c4de" 
+            else: unified_dark_text_color = "#a0abb3" 
+            html_default_text_color = unified_dark_text_color
+            time_color = unified_dark_text_color
+            expr_html_color = unified_dark_text_color 
+        else: 
+            html_default_text_color = light_text_color_default 
+            time_color = light_text_color_time
+            expr_html_color = light_text_color_expr_color 
+        baka_color = "#2c9fff" if self.current_theme == "dark" else "#0165cc"
+        hr_color = DARK_STYLESHEET_ACTIVE_BASE_COLORS["label_color"] if self.current_theme == "dark" else LIGHT_STYLESHEET_BASE_COLORS["label_color"]
+        error_html_color = '#ff6b6b' if self.current_theme == 'dark' else '#d9534f'
+        # --- 颜色逻辑结束 ---
+
+        # 定义分隔符HTML (只在累积模式下，并且不是第一个条目之前使用)
+        visual_separator_html = f"<br><hr style='border: none; border-top: 1px solid {hr_color}; margin-top: 8px; margin-bottom: 8px;' /><br>"
+
+        for index, entry in enumerate(self.historical_results):
+            entry_inner_html = ""
+            is_primary_block_for_separator = False # 标记是否为适合在其后加分隔符的块
+
+            if entry['type'] == 'success' or entry['type'] == 'not_found':
+                target_str = entry['target']
+                expr_str = entry.get('expr') # expr 可能为 None 如果是 not_found
+                elapsed = entry.get('elapsed', 0.0)
+                is_primary_block_for_separator = True
+
+                if expr_str: # 成功找到表达式
+                    entry_inner_html = f"""
+                        <p>目标: <span style="font-weight: bold;">{target_str}</span></p>
+                        <p>结果 (<span style="color: {time_color};">{elapsed:.2f}秒</span>):</p>
+                        <p><span style="font-weight: bold;">{target_str}</span> = <span style="color: {expr_html_color};">{expr_str}</span></p>
+                        <p style="color: {baka_color}; font-weight: bold;">baka~</p>
+                    """
+                else: # 未找到表达式
+                    entry_inner_html = f"""
+                        <p>目标: <span style="font-weight: bold;">{target_str}</span></p>
+                        <p>无法找到 {target_str} 的有效表达式</p>
+                    """
+            elif entry['type'] == 'error':
+                message = entry['message']
+                # target_str = entry.get('target', "未知操作") # 如果记录了目标
+                entry_inner_html = f"""
+                     <p style="color: {error_html_color};">错误: {message}</p>
+                """
+                # 错误信息后是否加分隔符，取决于你是否把它看作一个“主块”
+                # is_primary_block_for_separator = True # 如果希望错误后也有分隔
+
+            # 包装在带样式的div中
+            if entry_inner_html: # 只有当有内容时才包装和添加
+                full_entry_html = f"""
+                    <div style="font-family: Consolas, 'Courier New', monospace; font-size: 14px; color: {html_default_text_color};">
+                        {entry_inner_html}
+                    </div>
+                """
+                # 插入分隔符的逻辑：
+                # 如果是累积模式，并且这不是第一个条目，则在当前条目之前插入分隔符
+                if self.accumulate_results and index > 0:
+                     self.result_display.insertHtml(visual_separator_html)
+
+                self.result_display.insertHtml(full_entry_html)
+
+        self.result_display.moveCursor(QTextCursor.MoveOperation.End)
+        self.result_display.ensureCursorVisible()
+    
+    
+    def show_error(self, error_msg: str): # Add type hint for error_msg
+        # 当WorkerThread报告错误时，我们可能没有一个明确的 'target' 值与之关联
+        # 如果需要，可以修改WorkerThread的error_occurred信号来传递更多上下文
+        # 暂时，我们将错误视为一个独立的条目
+        
+        # 为了与成功结果的结构保持一致，我们可以创建一个类似的条目
+        # target_for_error = self._last_target_attempted or "未知目标" # 需要一种方式获取当前尝试的目标
+        # 假设我们没有简单的 _last_target_attempted，就只记录错误
+        
+        error_entry = {
+            'type': 'error',
+            'message': error_msg
+            # 'target': target_for_error # 可选
+        }
+
+        if self.accumulate_results:
+            self.historical_results.append(error_entry)
+            self._render_all_historical_results()
         else:
-            self.result_display.setHtml(error_display_html)
+            self.historical_results = [error_entry] # 只显示当前错误
+            self._render_all_historical_results()
 
         self.status_label.setText("发生错误")
         self.stop_loading_animation()
-
-        self._last_target = None
-        self._last_expression = None
-        self._last_elapsed_time = None
 
     def closeEvent(self, event):
         # 重写关闭事件，最小化到托盘
