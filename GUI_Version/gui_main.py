@@ -393,18 +393,15 @@ class SettingsPage(QWidget):
     def __init__(self, parent=None, initial_accumulate_state=False):
         super().__init__(parent)
         self.setObjectName("settingsPage")
-        # 设置为无边框窗口部件，并且在父部件之上（如果希望它覆盖其他内容）
-        # 但我们将其作为子部件添加，并用动画控制其显示和位置
         self.setWindowFlags(Qt.WindowType.FramelessWindowHint | Qt.WindowType.NoDropShadowWindowHint)
         
-        
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(20, 20, 20, 20) # 内边距
-        layout.setSpacing(15)
+        main_settings_layout = QVBoxLayout(self) # 主垂直布局
+        main_settings_layout.setContentsMargins(20, 20, 20, 20) 
+        main_settings_layout.setSpacing(15) # 行间距
 
-        self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground)  # 关键！确保样式表背景生效
-        self.update()  # 立即触发重绘   
-        self.setAutoFillBackground(True)  # 启用自动填充背景
+        self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground)  
+        self.update()  
+        self.setAutoFillBackground(True)  
 
         self.title_label = QLabel("设置")
         title_font = QFont()
@@ -412,34 +409,57 @@ class SettingsPage(QWidget):
         title_font.setBold(True)
         self.title_label.setFont(title_font)
         self.title_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        layout.addWidget(self.title_label)
+        main_settings_layout.addWidget(self.title_label)
+        main_settings_layout.addSpacing(10) # 标题和第一个设置项之间的额外间距
 
-        # ---- 新增：数据累积开关 ----
-        switch_layout = QHBoxLayout()
-        switch_layout.setSpacing(10)
-        
-        self.accumulate_label = QLabel("累积计算结果:")
-        switch_layout.addWidget(self.accumulate_label)
-        
+        # ---- 设置项1：数据累积 ----
+        setting_item_layout_1 = QHBoxLayout() # 每项设置使用一个水平布局
+        setting_item_layout_1.setContentsMargins(0, 5, 0, 5) # 设置项的上下内边距
+
+        self.accumulate_label = QLabel("允许累积计算结果")
+        # ---- 新增/修改：为 accumulate_label 设置字体 ----
+        accumulate_label_font = QFont()
+        accumulate_label_font.setPointSize(11) # 例如，设置为11号字，你可以调整
+        accumulate_label_font.setBold(True)    # 设置为加粗
+        self.accumulate_label.setFont(accumulate_label_font)
+        # 让标签占据一些空间，但不要无限扩展，给开关留出位置
+        self.accumulate_label.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed)
+        setting_item_layout_1.addWidget(self.accumulate_label, 1) # 参数1使其可以伸展
+
         self.accumulate_switch = CustomSwitch(self)
-        self.accumulate_switch.setChecked(initial_accumulate_state) # 设置初始状态
+        self.accumulate_switch.setChecked(initial_accumulate_state) 
         self.accumulate_switch.toggled.connect(self.on_accumulate_switch_changed)
-        switch_layout.addWidget(self.accumulate_switch, 0, Qt.AlignmentFlag.AlignLeft) # 让开关靠左，标签占据剩余空间
-        switch_layout.addStretch(1) # 将开关推向左边
+        # 开关使用固定大小或Preferred，不伸展
+        self.accumulate_switch.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed) 
+        setting_item_layout_1.addWidget(self.accumulate_switch, 0, Qt.AlignmentFlag.AlignRight) # <--- 开关靠右对齐
 
-        layout.addLayout(switch_layout)
+        main_settings_layout.addLayout(setting_item_layout_1)
         # ------------------------------
+        
+        # ---- 你可以在这里添加更多设置项，遵循同样的模式 ----
+        # 例如:
+        # setting_item_layout_2 = QHBoxLayout()
+        # setting_item_layout_2.setContentsMargins(0, 5, 0, 5)
+        # theme_label = QLabel("界面主题:")
+        # setting_item_layout_2.addWidget(theme_label, 1)
+        # theme_combobox = QComboBox() # 假设有一个主题选择框
+        # theme_combobox.addItems(["自动", "浅色", "深色"])
+        # setting_item_layout_2.addWidget(theme_combobox, 0, Qt.AlignmentFlag.AlignRight)
+        # main_settings_layout.addLayout(setting_item_layout_2)
+        # ----------------------------------------------------
 
-        self.placeholder_label = QLabel("")
-        self.placeholder_label.setAlignment(Qt.AlignmentFlag.AlignCenter) # 你之前的代码这里可能漏了
-        self.placeholder_label.setWordWrap(True) # 你之前的代码这里可能漏了
-        layout.addWidget(self.placeholder_label, 1)
+        # 占位符，如果不再需要具体的占位文本，可以移除或者用 addStretch 替代
+        # main_settings_layout.addStretch(1) # 将所有设置项推到上方，底部留空
+        self.placeholder_label = QLabel("") # 或者保留一个空的，如果以后想显示动态内容
+        self.placeholder_label.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+        main_settings_layout.addWidget(self.placeholder_label, 1) # 让它占据剩余垂直空间
 
-        # 关闭按钮
+
         self.close_button = QPushButton("关闭")
         self.close_button.setObjectName("settingsCloseButton")
-        self.close_button.clicked.connect(self.hide_animated) # 连接到隐藏动画
-        layout.addWidget(self.close_button, 0, Qt.AlignmentFlag.AlignHCenter)
+        self.close_button.clicked.connect(self.hide_animated) 
+        # 关闭按钮的对齐和样式可以保持不变，它会在所有设置项的下方
+        main_settings_layout.addWidget(self.close_button, 0, Qt.AlignmentFlag.AlignHCenter)
 
         self.hide() # 默认隐藏
 
@@ -464,9 +484,19 @@ class SettingsPage(QWidget):
             return
 
         parent_rect = self.parentWidget().rect()
-        # 目标尺寸 (例如父窗口的 70%)
-        target_width = int(parent_rect.width() * 0.7)
-        target_height = int(parent_rect.height() * 0.6)
+        
+        # ---- 新的目标尺寸：窄长条 ----
+        # 宽度可以是一个固定值，或者父窗口的一个较小百分比
+        # 例如，父窗口宽度的 40% 或 50%，或者一个固定像素值如 300px, 350px
+        target_width = int(parent_rect.width() * 0.3) # 例如，父窗口宽度的 30%
+        # 或者 target_width = 350 # 固定宽度示例
+        
+        # 高度可以保持原来的百分比，或者也调整一下
+        target_height = int(parent_rect.height() * 0.6) # 高度可以不变
+        # 确保宽度不会太小，至少能容纳内容
+        min_sensible_width = 280 # 举个例子，最小合理宽度
+        target_width = max(target_width, min_sensible_width)
+
         target_x = parent_rect.center().x() - target_width // 2
         target_y = parent_rect.center().y() - target_height // 2
         
