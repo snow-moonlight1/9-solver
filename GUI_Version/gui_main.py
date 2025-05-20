@@ -70,6 +70,12 @@ LIGHT_STYLESHEET_BASE ="""
     }
     QPushButton:disabled {
         background-color: #cccccc;
+    }    
+    QPushButton#clearResultsButton {
+        background-color: #5dade2; /* 清爽蓝色 */
+    }
+    QPushButton#clearResultsButton:hover {
+        background-color: #45b3e0; /* 深一点的清爽蓝色 */
     }
     QLineEdit {
         padding: 8px;
@@ -141,6 +147,12 @@ DARK_STYLESHEET_ACTIVE_BASE = """
         background-color: #3d4a56;
         color: #7f8c9a;
     }
+    QPushButton#clearResultsButton {
+        background-color: #5d8aa8; /* 深色激活状态下的蓝色 */
+    }
+    QPushButton#clearResultsButton:hover {
+        background-color: #4a7c9b; /* 深一点的深色激活蓝色 */
+    }
     QLineEdit {
         padding: 8px;
         border: 1px solid #4a5d6e; /* 蓝灰色边框 */
@@ -208,6 +220,12 @@ DARK_STYLESHEET_INACTIVE_BASE = """
     QPushButton:disabled {
         background-color: #303840; /* 比激活的 #3d4a56 略暗 */
         color: #707880;    /* 比激活的 #7f8c9a 略暗 */
+    }
+    QPushButton#clearResultsButton {
+        background-color: #507d9c; /* 深色非激活状态下的蓝色 */
+    }
+    QPushButton#clearResultsButton:hover {
+        background-color: #426a8a; /* 深一点的深色非激活蓝色 */
     }
     QLineEdit {
         padding: 8px;
@@ -1081,10 +1099,31 @@ class NineSolverGUI(QMainWindow):
         self.separator.setFrameShape(QFrame.Shape.HLine)
         frame_layout.addWidget(self.separator)
         
-        # 结果区域
+         # ---- 结果区域标题和清除按钮的布局 ----
+        results_header_layout = QHBoxLayout() # 新建一个水平布局
+        results_header_layout.setSpacing(10) # 设置间距
+
         self.result_title = QLabel("计算结果")
         self.result_title.setObjectName("result_title")
-        frame_layout.addWidget(self.result_title)
+        # 让标题标签在水平方向上尽可能扩展，将按钮推向右侧
+        self.result_title.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred) 
+        results_header_layout.addWidget(self.result_title)
+
+        # results_header_layout.addStretch(1) # 或者在这里添加一个伸展项将按钮推到最右边
+
+        self.clear_button = AnimatedPushButton("清除") # <--- 创建清除按钮
+        self.clear_button.setObjectName("clearResultsButton") # 给它一个对象名以便样式控制（如果需要）
+        # 设置固定大小策略，与“计算”按钮一致
+        self.clear_button.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed) 
+        # 你可能需要根据 "计算" 按钮的实际宽度调整这里的 min/max-width，或者让 AnimatedPushButton 自己处理
+        # 如果 AnimatedPushButton 的样式已经包含了 min/max width，这里可能不需要再设
+        # self.clear_button.setMinimumWidth(60) # 与计算按钮的样式一致
+        # self.clear_button.setMaximumWidth(80) # 与计算按钮的样式一致
+        self.clear_button.clicked.connect(self.clear_results_display) # <--- 连接到新的槽函数
+        results_header_layout.addWidget(self.clear_button)
+
+        frame_layout.addLayout(results_header_layout) # 将这个水平布局添加到垂直的 frame_layout
+        
         
         self.result_display = QTextEdit()
         self.result_display.setReadOnly(True)
@@ -1109,7 +1148,23 @@ class NineSolverGUI(QMainWindow):
         # 更新 settings_button 的颜色
         self._update_settings_button_style()
 
+    def clear_results_display(self):
+        """
+        清除 QTextEdit 中的所有内容、历史记录，并重置相关状态。
+        """
+        print("Clearing results display.")
+        self.result_display.clear()
+        self.historical_results = []
         
+        # 如果你将来重新引入了类似 results_count_for_separator 的计数器，也在这里重置
+        # self.results_count_for_separator = 0 
+
+        # 可选：更新状态栏
+        self.status_label.setText("输出已清除")
+
+        # 可选：将焦点移回输入框
+        if hasattr(self, 'input_field'):
+            self.input_field.setFocus()    
     def show_result(self, target_str: str, expr_str: str, elapsed: float): # Renamed expr to expr_str
         self.stop_loading_animation()
         
@@ -1319,7 +1374,6 @@ class NineSolverGUI(QMainWindow):
             time_color = light_text_color_time
             expr_html_color = light_text_color_expr_color 
         baka_color = "#2c9fff" if self.current_theme == "dark" else "#0165cc"
-        # hr_color 和 visual_separator_html 已被移除
         error_html_color = '#ff6b6b' if self.current_theme == 'dark' else '#d9534f'
         # --- 颜色逻辑结束 ---
 
