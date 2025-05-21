@@ -687,9 +687,7 @@ class FumoSplash(QWidget):
         layout.addWidget(self.label)
         self.setLayout(layout)
 
-        self._opacity_effect = QGraphicsOpacityEffect(self)
-        self.setGraphicsEffect(self._opacity_effect)
-        self._opacity_effect.setOpacity(0.0) 
+        self.setWindowOpacity(0.0) # <--- 直接设置窗口初始透明度
         print(f"  FumoSplash __init__: Initial opacity set to 0.0")
 
         self.animation_group = QSequentialAnimationGroup(self)
@@ -705,13 +703,13 @@ class FumoSplash(QWidget):
 
     def _setup_and_start_animation(self):
         print(f"--- FumoSplash _setup_and_start_animation ---")
-        fade_in_anim = QPropertyAnimation(self._opacity_effect, b"opacity")
+        fade_in_anim = QPropertyAnimation(self, b"windowOpacity")
         fade_in_anim.setDuration(self.fade_in_duration)
         fade_in_anim.setStartValue(0.0)
         fade_in_anim.setEndValue(1.0)
         fade_in_anim.setEasingCurve(QEasingCurve.Type.Linear)
 
-        fade_out_anim = QPropertyAnimation(self._opacity_effect, b"opacity")
+        fade_out_anim = QPropertyAnimation(self, b"windowOpacity")
         fade_out_anim.setDuration(self.fade_out_duration)
         fade_out_anim.setStartValue(1.0)
         fade_out_anim.setEndValue(0.0)
@@ -732,7 +730,7 @@ class FumoSplash(QWidget):
         self.activateWindow() # 尝试激活
         self.raise_()         # 尝试提升到最前
 
-        print(f"  self.show() called. Is visible: {self.isVisible()}, Opacity effect: {self._opacity_effect.opacity()}")
+        print(f"  self.show() called. Is visible: {self.isVisible()}, Window Opacity: {self.windowOpacity()}")
         
         print(f"  Starting animation group...")
         self.animation_group.start()
@@ -791,7 +789,7 @@ class FumoSplash(QWidget):
         # print("FumoSplash Paint Event") # 可以取消注释以查看是否被频繁调用
         # super().paintEvent(event) # 对于完全透明的widget，可能不需要调用父类
         # 如果背景完全透明，QLabel会自己绘制
-        pass # 我们依赖 WA_TranslucentBackground 和 QLabel 来绘制
+        super().paintEvent(event) # 我们依赖 WA_TranslucentBackground 和 QLabel 来绘制
 
 class NineSolverGUI(QMainWindow):
     def __init__(self):
