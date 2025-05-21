@@ -4,7 +4,6 @@ import math
 import time
 import random
 import re
-import sys
 import wave
 import pyaudio
 import io
