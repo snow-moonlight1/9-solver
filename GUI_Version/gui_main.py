@@ -4,9 +4,10 @@ from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, QH
                              QLabel, QLineEdit, QPushButton, QTextEdit, QFrame, QSizePolicy, 
                              QSystemTrayIcon, QMenu, QGraphicsBlurEffect)
 from PyQt6.QtCore import Qt, QThread, pyqtSignal, QPropertyAnimation, QEasingCurve, QSequentialAnimationGroup, QEvent, QRect, QParallelAnimationGroup, QSize, QTimer
-from PyQt6.QtGui import QFont, QIcon, QColor, QPixmap, QPalette, QImage, QTextCursor, QPaintEvent
+from PyQt6.QtGui import QFont, QIcon, QColor, QPixmap, QPalette, QImage, QTextCursor, QPaintEvent, QScreen
 
 from main import ImprovedNineExpressionFinder
+from typing import Optional
 from Icon_Data import ICON_DATA
 from setting_grey import SETTING_GREY
 from setting_green import SETTING_GREEN
@@ -658,17 +659,20 @@ DARK_STYLESHEET_INACTIVE_BASE_COLORS = {
 }
 
 class FumoSplash(QWidget):
-    def __init__(self, pixmap: QPixmap, parent_window_geometry: QRect):
+    def __init__(self, pixmap: QPixmap, 
+                 parent_window_geometry_fallback: QRect, # 重命名以表明是备用
+                 main_app_screen: Optional[QScreen] = None): # 新增参数 QScreen
         super().__init__()
         print(f"--- FumoSplash __init__ ---")
         if pixmap is None or pixmap.isNull():
             print("  FumoSplash __init__: Invalid pixmap, aborting.")
-            return 
-
+            return
+ 
         self.pixmap_original_size = pixmap.size() # 保存原始尺寸以供参考
         print(f"  FumoSplash __init__: Original pixmap size: {self.pixmap_original_size}")
         self.pixmap = pixmap
-        self.parent_geo = parent_window_geometry
+        self.main_app_screen = main_app_screen # 存储主程序屏幕
+        self.parent_geo_fallback = parent_window_geometry_fallback # 保留备用
 
         self.setWindowFlags(
             Qt.WindowType.FramelessWindowHint | 
@@ -747,56 +751,100 @@ class FumoSplash(QWidget):
             print("  Pixmap is Null in randomize.")
             return
 
-        # ---- 获取所有屏幕信息 ----
-        screens = QApplication.instance().screens()
-        if not screens:
-            print("  No screens available, using primary screen or parent geometry as fallback.")
-            # Fallback to parent_geo if no screens are found (shouldn't happen in normal GUI apps)
-            target_screen_geometry = self.parent_geo 
+        all_screens = QApplication.instance().screens()
+        if not all_screens:
+            print("  No screens available, using main app window's screen or fallback geometry.")
+            # 如果没有屏幕信息，就使用主程序窗口所在的屏幕（如果之前传入了）
+            # 或者用 parent_geo_fallback 作为最后的备用
+            if self.main_app_screen:
+                target_screen_geometry = self.main_app_screen.geometry()
+            else:
+                target_screen_geometry = self.parent_geo_fallback
         else:
-            # ---- 随机选择一个屏幕 ----
-            chosen_screen = random.choice(screens)
-            target_screen_geometry = chosen_screen.geometry() # QRect of the chosen screen in virtual desktop coordinates
-            print(f"  Chosen screen: {chosen_screen.name()}, Geometry: {target_screen_geometry}")
-        # -------------------------
+            # ---- 带权重的屏幕选择 ----
+            primary_screen = QApplication.instance().primaryScreen() # 获取系统主屏幕
+            main_app_screen_obj = self.main_app_screen # 主程序窗口当前所在的屏幕
 
-        # ---- 随机大小计算，基于选定屏幕的尺寸 ----
-        # 使用屏幕的较小维度（宽或高）作为缩放基准，以避免图片过大超出屏幕
+            screens_to_choose_from = []
+            weights = []
+
+            # 确定主窗口当前屏幕的权重
+            # 权重值可以调整
+            main_screen_weight_target = 0.60 # 目标主屏幕出现概率
+            if len(all_screens) == 1:
+                main_screen_weight = 1.0 # 只有一个屏幕，100%
+                other_screen_weight_each = 0.0
+            elif len(all_screens) == 2:
+                main_screen_weight = main_screen_weight_target # 例如 60%
+                other_screen_weight_each = 1.0 - main_screen_weight # 剩余 40%
+            elif len(all_screens) == 3:
+                main_screen_weight = main_screen_weight_target # 例如 60%
+                other_screen_weight_each = (1.0 - main_screen_weight) / 2 # 剩余平分，各 20%
+            elif len(all_screens) == 4: # 你提到的例子
+                main_screen_weight = 0.58
+                other_screen_weight_each = (1.0 - main_screen_weight) / 3 # 约 14%
+            else: # 更多屏幕，主屏幕至少55%，其余平分
+                main_screen_weight = 0.55 
+                if len(all_screens) > 1:
+                    other_screen_weight_each = (1.0 - main_screen_weight) / (len(all_screens) - 1)
+                else: # 实际上 len(all_screens) == 1 已经被上面处理了
+                    other_screen_weight_each = 0 
+
+
+            print(f"  Screen weights: Main App Screen target = {main_screen_weight*100:.1f}%, Other screens each target = {other_screen_weight_each*100:.1f}%")
+
+            for screen in all_screens:
+                screens_to_choose_from.append(screen)
+                if main_app_screen_obj and screen == main_app_screen_obj:
+                    weights.append(main_screen_weight)
+                    print(f"    Screen '{screen.name()}' is MAIN APP SCREEN, weight: {main_screen_weight}")
+                elif screen == primary_screen and not main_app_screen_obj: # 如果无法确定主程序屏幕，则用系统主屏
+                     weights.append(main_screen_weight)
+                     print(f"    Screen '{screen.name()}' is PRIMARY (fallback), weight: {main_screen_weight}")
+                else:
+                    weights.append(other_screen_weight_each)
+                    print(f"    Screen '{screen.name()}' is OTHER, weight: {other_screen_weight_each}")
+            
+            # 如果权重列表为空或所有权重为0（不太可能，除非只有一个屏幕且权重计算错误），则均等选择
+            if not weights or all(w == 0 for w in weights):
+                print("  Warning: Weights are zero or empty, falling back to uniform random choice.")
+                chosen_screen = random.choice(all_screens)
+            else:
+                # 使用 random.choices 进行带权随机选择
+                # random.choices 返回一个列表，我们取第一个元素
+                chosen_screen_list = random.choices(screens_to_choose_from, weights=weights, k=1)
+                chosen_screen = chosen_screen_list[0]
+            
+            target_screen_geometry = chosen_screen.geometry()
+            print(f"  Chosen screen (weighted): '{chosen_screen.name()}', Geometry: {target_screen_geometry}")
+            # -----------------------------
+
+        # ---- 随机大小计算 (与之前类似，但基于新的 target_screen_geometry) ----
         screen_min_dim = min(target_screen_geometry.width(), target_screen_geometry.height())
-        
-        # 定义基于屏幕尺寸的最小和最大缩放比例
-        min_scale_percent = 0.20 # 屏幕最小维度的 20%
-        max_scale_percent = 0.60 # 屏幕最小维度的 60% (原80%可能导致图片大部分占据屏幕)
-                                # 你可以根据 fumo 图片的观感调整这个最大百分比
+        min_scale_percent = 0.20 
+        max_scale_percent = 0.60 
 
-        # 计算基于屏幕的尺寸
         min_allowed_size_on_screen = int(screen_min_dim * min_scale_percent)
         max_allowed_size_on_screen = int(screen_min_dim * max_scale_percent)
         
-        # 随机选择一个目标尺寸（以较短边为基准）
         target_fumo_dimension = random.randint(min_allowed_size_on_screen, max_allowed_size_on_screen)
         
-        # 根据 Fumo 的原始宽高比计算最终的 scaled_width 和 scaled_height
         original_width = self.pixmap_original_size.width()
         original_height = self.pixmap_original_size.height()
 
-        if original_width == 0 or original_height == 0: # 避免除以零
-            print("  Error: Original pixmap size is zero.")
-            scaled_width, scaled_height = 100, 100 # Fallback size
-        elif original_width >= original_height: # 如果图片偏宽或方形
-            scale_factor = target_fumo_dimension / original_height # 以高度为基准缩放到 target_fumo_dimension
+        if original_width == 0 or original_height == 0: 
+            scaled_width, scaled_height = 100, 100 
+        elif original_width >= original_height: 
+            scale_factor = target_fumo_dimension / original_height 
             scaled_height = target_fumo_dimension
             scaled_width = int(original_width * scale_factor)
-        else: # 如果图片偏高
-            scale_factor = target_fumo_dimension / original_width # 以宽度为基准缩放
+        else: 
+            scale_factor = target_fumo_dimension / original_width 
             scaled_width = target_fumo_dimension
             scaled_height = int(original_height * scale_factor)
 
-        # 再次确保尺寸不会过小或过大（相对于原始图片和屏幕）
-        # 例如，最大不超过原始图片尺寸（除非你允许放大）
         scaled_width = min(scaled_width, original_width)
         scaled_height = min(scaled_height, original_height)
-        # 最小尺寸保护
         scaled_width = max(scaled_width, 50) 
         scaled_height = max(scaled_height, 50)
 
@@ -808,13 +856,8 @@ class FumoSplash(QWidget):
         self.resize(scaled_width, scaled_height) 
         # -----------------------------------
 
-        # ---- 随机位置计算，确保完全在选定屏幕内 ----
-        # target_screen_geometry.x() 和 .y() 是屏幕在虚拟桌面上的左上角坐标
-        # target_screen_geometry.width() 和 .height() 是屏幕的宽高
-        
-        # 可放置区域的右下角 x 坐标 (相对于屏幕自身的0,0)
+        # ---- 随机位置计算 (与之前类似，基于新的 target_screen_geometry) ----
         max_x_offset_on_screen = target_screen_geometry.width() - scaled_width
-        # 可放置区域的右下角 y 坐标 (相对于屏幕自身的0,0)
         max_y_offset_on_screen = target_screen_geometry.height() - scaled_height
         
         print(f"  Screen for positioning: X={target_screen_geometry.x()}, Y={target_screen_geometry.y()}, W={target_screen_geometry.width()}, H={target_screen_geometry.height()}")
@@ -825,13 +868,10 @@ class FumoSplash(QWidget):
 
         if max_x_offset_on_screen > 0:
             rand_x_on_screen_offset = random.randint(0, max_x_offset_on_screen)
-        # else: 图片宽度大于等于屏幕宽度，只能放在x=0（相对于屏幕）
         
         if max_y_offset_on_screen > 0:
             rand_y_on_screen_offset = random.randint(0, max_y_offset_on_screen)
-        # else: 图片高度大于等于屏幕高度，只能放在y=0（相对于屏幕）
             
-        # 最终的屏幕坐标
         final_screen_x = target_screen_geometry.x() + rand_x_on_screen_offset
         final_screen_y = target_screen_geometry.y() + rand_y_on_screen_offset
             
@@ -941,12 +981,9 @@ class NineSolverGUI(QMainWindow):
         self.show_fumo_easter_egg = checked
         print(f"Fumo easter egg setting changed to: {self.show_fumo_easter_egg}")
     def trigger_fumo_splash(self):
-        print(f"--- trigger_fumo_splash called ---") # 调试打印：方法被调用
-        
-        # 检查 Fumo 彩蛋开关状态
+        # ... (前面的打印和条件检查不变) ...
+        print(f"--- trigger_fumo_splash called ---") 
         print(f"  show_fumo_easter_egg: {self.show_fumo_easter_egg}")
-
-        # 检查 Fumo Pixmap 是否有效
         fumo_pixmap_is_valid = False
         if hasattr(self, 'fumo_pixmap') and self.fumo_pixmap and not self.fumo_pixmap.isNull():
             fumo_pixmap_is_valid = True
@@ -954,33 +991,40 @@ class NineSolverGUI(QMainWindow):
         else:
             print(f"  fumo_pixmap is valid: False or not loaded.")
 
-        # 条件判断，如果不满足则不显示 Fumo
         if not self.show_fumo_easter_egg:
             print("  Fumo splash not shown: show_fumo_easter_egg is False.")
             return
-        if not fumo_pixmap_is_valid: # 使用上面计算的布尔值
+        if not fumo_pixmap_is_valid: 
             print("  Fumo splash not shown: fumo_pixmap is invalid or not loaded.")
             return
 
-        # 获取主窗口当前的几何信息（相对于屏幕）
-        main_window_geometry = self.geometry()
+        main_window_geometry = self.geometry() # 这个是相对于虚拟桌面的
         print(f"  Main window geometry for Fumo: {main_window_geometry}")
         
-        # 检查主窗口是否可见，如果不可见，Fumo 可能也无法正确定位或显示
         if not self.isVisible():
             print("  Main window is not visible, Fumo splash might not display correctly.")
-            # return # 可以考虑如果主窗口不可见则不显示Fumo
+            # return 
+
+        # ---- 新增：获取主窗口当前所在的屏幕 ----
+        current_screen_of_main_window = self.screen() # QWidget.screen() 获取 widget 所在的屏幕
+        if current_screen_of_main_window is None: # Fallback if screen somehow cannot be determined
+            screens = QApplication.instance().screens()
+            if screens:
+                current_screen_of_main_window = QApplication.instance().primaryScreen() or screens[0]
+            else: # Should not happen
+                print("  Could not determine current screen, Fumo may not display.")
+                return 
+        print(f"  Main window is on screen: {current_screen_of_main_window.name() if current_screen_of_main_window else 'Unknown'}")    
 
         print(f"  Attempting to create FumoSplash instance...")
         try:
-            # 创建 FumoSplash 实例
-            # FumoSplash 会在动画完成后自动关闭和删除
-            # 我们不需要保留对它的引用，除非想在它显示期间立即控制它
-            # (注意：如果 FumoSplash 的 __init__ 可能抛出异常，这里可以 try-except)
-            splash_instance = FumoSplash(self.fumo_pixmap, main_window_geometry)
+            # ---- 修改：传递当前屏幕给 FumoSplash ----
+            splash_instance = FumoSplash(
+                self.fumo_pixmap, 
+                main_window_geometry, # 这个参数现在可以移除，或作为备用
+                current_screen_of_main_window # 新增参数
+            )     
             print(f"  FumoSplash instance created: {splash_instance}")
-            # splash_instance.show() is called within FumoSplash's _setup_and_start_animation
-            # 我们需要确保 FumoSplash 的构造函数成功执行到那里
         except Exception as e:
             print(f"  Error creating FumoSplash instance: {e}")
     def on_accumulate_setting_changed(self, checked):
