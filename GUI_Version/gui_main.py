@@ -2,7 +2,7 @@
 import sys
 from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
                              QLabel, QLineEdit, QPushButton, QTextEdit, QFrame, QSizePolicy, 
-                             QSystemTrayIcon, QMenu, QGraphicsBlurEffect, QGraphicsOpacityEffect)
+                             QSystemTrayIcon, QMenu, QGraphicsBlurEffect)
 from PyQt6.QtCore import Qt, QThread, pyqtSignal, QPropertyAnimation, QEasingCurve, QSequentialAnimationGroup, QEvent, QRect, QParallelAnimationGroup, QSize, QTimer
 from PyQt6.QtGui import QFont, QIcon, QColor, QPixmap, QPalette, QImage, QTextCursor, QPaintEvent
 
@@ -1564,27 +1564,7 @@ class NineSolverGUI(QMainWindow):
             color2 = QColor("#adb5bd") # 浅色模式下的颜色2
         
         self.loading_animation.stop()
-        # 注意：QPropertyAnimation(self.status_label, b"styleSheet") 可能会与全局样式冲突
-        # 更好的做法是动画 QGraphicsOpacityEffect 或者直接改变颜色属性（如果支持）
-        # 但对于颜色，直接设置 styleSheet 片段是常见的
-        # 为了让动画效果更平滑，我们可以让它只改变颜色部分
-        # 但 QPropertyAnimation 对 styleSheet 的支持有限，它会整个替换 styleSheet 字符串
-        # 所以，我们让它在两种固定样式间切换，或者直接改变文字颜色
-        # 这里我们保持原有的机制，但颜色根据主题来
-        
-        # 如果是直接操作颜色属性，可以这样做，但 QLabel 没有直接的 color 属性可供动画
-        # self.loading_animation = QPropertyAnimation(self.status_label, b"palette")
-        # pal = self.status_label.palette()
-        # pal.setColor(QPalette.ColorRole.WindowText, color1)
-        # self.loading_animation.setStartValue(pal)
-        # pal.setColor(QPalette.ColorRole.WindowText, color2)
-        # self.loading_animation.setEndValue(pal)
-        
-        # 当前实现是改变 stylesheet，确保它只改变颜色
-        # 但这可能不是最佳实践，因为 QPropertyAnimation 对 stylesheet 的插值可能不理想
-        # 一个更简单的方式，但可能不是平滑动画：
-        # 使用 QTimer 周期性地切换颜色，而不是 QPropertyAnimation
-        
+             
         # 沿用之前的逻辑，但颜色动态
         self.loading_animation.setKeyValueAt(0, f"color: {color1.name()}; font-style: italic;")
         self.loading_animation.setKeyValueAt(0.5, f"color: {color2.name()}; font-style: italic;")
