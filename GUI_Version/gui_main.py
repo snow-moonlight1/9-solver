@@ -747,43 +747,97 @@ class FumoSplash(QWidget):
             print("  Pixmap is Null in randomize.")
             return
 
-        min_scale = 0.5
-        max_scale = 0.8 # 稍微改小一点最大缩放，原图1024x1024可能太大了
-        scale_factor = random.uniform(min_scale, max_scale)
+        # ---- 获取所有屏幕信息 ----
+        screens = QApplication.instance().screens()
+        if not screens:
+            print("  No screens available, using primary screen or parent geometry as fallback.")
+            # Fallback to parent_geo if no screens are found (shouldn't happen in normal GUI apps)
+            target_screen_geometry = self.parent_geo 
+        else:
+            # ---- 随机选择一个屏幕 ----
+            chosen_screen = random.choice(screens)
+            target_screen_geometry = chosen_screen.geometry() # QRect of the chosen screen in virtual desktop coordinates
+            print(f"  Chosen screen: {chosen_screen.name()}, Geometry: {target_screen_geometry}")
+        # -------------------------
+
+        # ---- 随机大小计算，基于选定屏幕的尺寸 ----
+        # 使用屏幕的较小维度（宽或高）作为缩放基准，以避免图片过大超出屏幕
+        screen_min_dim = min(target_screen_geometry.width(), target_screen_geometry.height())
         
-        scaled_width = int(self.pixmap_original_size.width() * scale_factor) # 基于原始尺寸缩放
-        scaled_height = int(self.pixmap_original_size.height() * scale_factor)
+        # 定义基于屏幕尺寸的最小和最大缩放比例
+        min_scale_percent = 0.20 # 屏幕最小维度的 20%
+        max_scale_percent = 0.60 # 屏幕最小维度的 60% (原80%可能导致图片大部分占据屏幕)
+                                # 你可以根据 fumo 图片的观感调整这个最大百分比
+
+        # 计算基于屏幕的尺寸
+        min_allowed_size_on_screen = int(screen_min_dim * min_scale_percent)
+        max_allowed_size_on_screen = int(screen_min_dim * max_scale_percent)
         
+        # 随机选择一个目标尺寸（以较短边为基准）
+        target_fumo_dimension = random.randint(min_allowed_size_on_screen, max_allowed_size_on_screen)
+        
+        # 根据 Fumo 的原始宽高比计算最终的 scaled_width 和 scaled_height
+        original_width = self.pixmap_original_size.width()
+        original_height = self.pixmap_original_size.height()
+
+        if original_width == 0 or original_height == 0: # 避免除以零
+            print("  Error: Original pixmap size is zero.")
+            scaled_width, scaled_height = 100, 100 # Fallback size
+        elif original_width >= original_height: # 如果图片偏宽或方形
+            scale_factor = target_fumo_dimension / original_height # 以高度为基准缩放到 target_fumo_dimension
+            scaled_height = target_fumo_dimension
+            scaled_width = int(original_width * scale_factor)
+        else: # 如果图片偏高
+            scale_factor = target_fumo_dimension / original_width # 以宽度为基准缩放
+            scaled_width = target_fumo_dimension
+            scaled_height = int(original_height * scale_factor)
+
+        # 再次确保尺寸不会过小或过大（相对于原始图片和屏幕）
+        # 例如，最大不超过原始图片尺寸（除非你允许放大）
+        scaled_width = min(scaled_width, original_width)
+        scaled_height = min(scaled_height, original_height)
+        # 最小尺寸保护
         scaled_width = max(scaled_width, 50) 
         scaled_height = max(scaled_height, 50)
-        print(f"  Calculated scaled size: {scaled_width}x{scaled_height}")
+
+        print(f"  Calculated Fumo scaled size: {scaled_width}x{scaled_height} (Target dim: {target_fumo_dimension})")
 
         self.label.setPixmap(self.pixmap.scaled(scaled_width, scaled_height, 
                                                 Qt.AspectRatioMode.KeepAspectRatio, 
                                                 Qt.TransformationMode.SmoothTransformation))
         self.resize(scaled_width, scaled_height) 
-        # self.setFixedSize(scaled_width, scaled_height) # 尝试用 FixedSize
+        # -----------------------------------
 
-        max_x = self.parent_geo.width() - scaled_width
-        max_y = self.parent_geo.height() - scaled_height
-        print(f"  Parent geo for positioning: W={self.parent_geo.width()} H={self.parent_geo.height()}")
-        print(f"  Max X offset: {max_x}, Max Y offset: {max_y}")
-
-        rand_x_offset = 0
-        rand_y_offset = 0
-
-        if max_x > 0:
-            rand_x_offset = random.randint(0, max_x)
-        if max_y > 0:
-            rand_y_offset = random.randint(0, max_y)
+        # ---- 随机位置计算，确保完全在选定屏幕内 ----
+        # target_screen_geometry.x() 和 .y() 是屏幕在虚拟桌面上的左上角坐标
+        # target_screen_geometry.width() 和 .height() 是屏幕的宽高
         
-        # 位置是相对于屏幕的，所以要加上父窗口的左上角坐标
-        # parent_geo 是 QRect，它有 x(), y() 方法获取左上角屏幕坐标
-        rand_x_screen = self.parent_geo.x() + rand_x_offset
-        rand_y_screen = self.parent_geo.y() + rand_y_offset
+        # 可放置区域的右下角 x 坐标 (相对于屏幕自身的0,0)
+        max_x_offset_on_screen = target_screen_geometry.width() - scaled_width
+        # 可放置区域的右下角 y 坐标 (相对于屏幕自身的0,0)
+        max_y_offset_on_screen = target_screen_geometry.height() - scaled_height
+        
+        print(f"  Screen for positioning: X={target_screen_geometry.x()}, Y={target_screen_geometry.y()}, W={target_screen_geometry.width()}, H={target_screen_geometry.height()}")
+        print(f"  Max X offset on screen: {max_x_offset_on_screen}, Max Y offset on screen: {max_y_offset_on_screen}")
+
+        rand_x_on_screen_offset = 0
+        rand_y_on_screen_offset = 0
+
+        if max_x_offset_on_screen > 0:
+            rand_x_on_screen_offset = random.randint(0, max_x_offset_on_screen)
+        # else: 图片宽度大于等于屏幕宽度，只能放在x=0（相对于屏幕）
+        
+        if max_y_offset_on_screen > 0:
+            rand_y_on_screen_offset = random.randint(0, max_y_offset_on_screen)
+        # else: 图片高度大于等于屏幕高度，只能放在y=0（相对于屏幕）
             
-        print(f"  Calculated screen position: X={rand_x_screen}, Y={rand_y_screen}")
-        self.move(rand_x_screen, rand_y_screen)
+        # 最终的屏幕坐标
+        final_screen_x = target_screen_geometry.x() + rand_x_on_screen_offset
+        final_screen_y = target_screen_geometry.y() + rand_y_on_screen_offset
+            
+        print(f"  Calculated final screen position: X={final_screen_x}, Y={final_screen_y}")
+        self.move(final_screen_x, final_screen_y)
+        # -----------------------------------------
 
     def paintEvent(self, event: QPaintEvent): 
         # print("FumoSplash Paint Event") # 可以取消注释以查看是否被频繁调用
