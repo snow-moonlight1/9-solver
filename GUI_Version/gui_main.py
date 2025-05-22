@@ -371,23 +371,7 @@ class AnimatedPushButton(QPushButton):
         self._update_cloned_button_style() # 确保图标也同步
         
         if self.cloned_settings_button.isVisible(): # 如果克隆按钮应该可见，则确保它在顶层
-            self.cloned_settings_button.raise_()
-
-   # _synchronize_cloned_button 方法也应调用 _synchronize_cloned_button_position
-    # 或者将位置同步逻辑完全放在 _synchronize_cloned_button_position 中，
-    # 而 _synchronize_cloned_button 负责大小和图标。
-    # 我修改一下 _synchronize_cloned_button：
-    def _synchronize_cloned_button(self):
-        """将克隆按钮的属性（大小、图标、位置）与原始按钮同步。"""
-        if not hasattr(self, 'settings_button') or not hasattr(self, 'cloned_settings_button'):
-            return
-
-        self.cloned_settings_button.setFixedSize(self.settings_button.size())
-        self.cloned_settings_button.setIconSize(self.settings_button.iconSize())
-        # 图标由 _update_cloned_button_style 处理
-        
-        self._synchronize_cloned_button_position() # 调用位置同步
-        self.cloned_settings_button.raise_()                  
+            self.cloned_settings_button.raise_()                  
 
 class SettingsPage(QWidget):
     closed = pyqtSignal() # 定义一个关闭信号
@@ -446,7 +430,7 @@ class SettingsPage(QWidget):
         setting_item_layout_baka_audio = QHBoxLayout()
         setting_item_layout_baka_audio.setContentsMargins(0, 5, 0, 5)
 
-        self.baka_audio_label = QLabel("播放Baka音效:")
+        self.baka_audio_label = QLabel("播放Baka音效")
         baka_audio_label_font = QFont() # 与 accumulate_label 字体一致
         baka_audio_label_font.setPointSize(11)
         baka_audio_label_font.setBold(True)
@@ -665,6 +649,36 @@ class SettingsPage(QWidget):
             }}
         """)
         self.title_label.setStyleSheet(f"color: {text_color};") # 确保标题颜色也更新
+
+# gui_main.py 或 widgets.py
+
+# ... (必要的 QtWidget 和 QtCore 导入) ...
+
+class OverlayWidget(QWidget):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        # 阻止鼠标事件穿透到下面的控件
+        self.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, False) 
+        # 使背景透明（如果需要看到下面的内容，但我们主要用它来拦截事件）
+        self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True) 
+        self.setStyleSheet("background-color: rgba(0,0,0,0);") # 完全透明
+        # 或者用半透明调试:
+        # self.setStyleSheet("background-color: rgba(255, 0, 0, 30);") 
+        self.hide() 
+
+    def setTargetWidget(self, widget_to_cover: QWidget):
+        """设置此覆盖层要覆盖的目标控件，并同步大小和位置。"""
+        if widget_to_cover and widget_to_cover.parentWidget():
+            # 确保覆盖层和目标控件有相同的直接父控件，以保证坐标系一致
+            if self.parent() != widget_to_cover.parentWidget():
+                self.setParent(widget_to_cover.parentWidget())
+            
+            self.setGeometry(widget_to_cover.geometry())
+            self.raise_() # 确保在目标控件之上
+            print(f"Overlay set for widget: {widget_to_cover.objectName()} at {widget_to_cover.geometry()}")
+        else:
+            print("Warning: Invalid target widget or target widget has no parent for Overlay.")
+            self.hide()
 
 # 为了方便 SettingsPage 访问主题颜色，我们可以将颜色提取出来
 # (或者 SettingsPage 在更新时从父窗口获取这些颜色)
@@ -915,13 +929,16 @@ class FumoSplash(QWidget):
 
 class NineSolverGUI(QMainWindow):
     def __init__(self):
-        super().__init__()       
+        super().__init__() 
+        self.calculate_button_overlay = None # 初始化计算按钮上方透明窗口
+        self.clear_button_overlay = None # <--- 新增：为清除按钮声明覆盖层      
         self.current_theme = get_system_theme() # 获取初始系统主题
         self._theme_initialized = False # 添加一个标志位        
         self.accumulate_results = False # 新增：用于控制是否累积结果
         self.show_fumo_easter_egg = False # <--- 新增：Fumo彩蛋开关状态，默认关闭
         self.play_baka_audio_on_success = True # <--- 新增：Baka声音开关状态，默认开启
         self.fumo_pixmap = None # <--- 新增：用于存储加载后的Fumo QPixmap
+        self.calculate_button_overlay = None
         # 新增：预加载 Fumo 图片
         try:
             fumo_image = QImage.fromData(base64.b64decode(FUMO))
@@ -1002,6 +1019,8 @@ class NineSolverGUI(QMainWindow):
         # 设置窗口图标
         self.setWindowIcon(QIcon(QPixmap.fromImage(QImage.fromData(base64.b64decode(self.ICON_DATA)))))
         self.init_ui()
+        if hasattr(self, 'calculate_btn'):
+            self.calculate_button_overlay = OverlayWidget(self.calculate_btn.parentWidget())
         self.setup_animations()
 
         # 连接系统调色板变化信号
@@ -1105,60 +1124,93 @@ class NineSolverGUI(QMainWindow):
         # 确保克隆按钮在最上层 (相对于主窗口内的其他非顶层子部件)
         self.cloned_settings_button.raise_()    
     def toggle_settings_page(self):
-        # 检查设置页面动画和模糊动画状态
         settings_page_anim_running = self.settings_page.parallel_anim_group.state() == QParallelAnimationGroup.State.Running
         blur_anim_running = self.blur_animation.state() == QPropertyAnimation.State.Running
 
-        # 移除 cloned_button_anim_running 的检查，因为它不再有动画
         if settings_page_anim_running or blur_anim_running:
             print("Animation in progress, ignoring toggle request.")
             return
 
         target_blur_radius = 10
         animation_duration = 300 
-        # button_fade_duration = 200 # 不再需要
 
-        # 移除 self.cloned_button_fade_animation.setDuration(button_fade_duration)
-
-        if self.settings_page.isVisible():
-            print("Toggle: Settings page is visible, hiding it (triggered by cloned_button or direct call).")
-            # 只启动设置页面的隐藏动画。
-            # settings_page.hide_animated() 会触发:
-            # 1. self.settings_page.hide_animation_started -> self.on_settings_hide_anim_started (处理模糊消失动画)
-            # 2. settings_page 动画结束后 -> self.settings_page.closed -> self.on_settings_page_fully_closed (处理按钮切换)
+        if self.settings_page.isVisible(): # === 关闭设置页面 ===
+            print("Toggle: Settings page is visible, hiding it.")
             self.settings_page.hide_animated() 
             
-            # 克隆按钮保持可见，直到 on_settings_page_fully_closed 中处理
-            # 原始按钮保持隐藏，直到 on_settings_page_fully_closed 中处理
+            # ---- 恢复主界面交互 ----
+            if hasattr(self, 'input_field'):
+                self.input_field.setEnabled(True)
+                # self.input_field.setFocus() # 焦点在 on_settings_page_fully_closed 中设置更合适
 
-        else: # Settings page is hidden, show it
+            if self.calculate_button_overlay:
+                self.calculate_button_overlay.hide()
+            
+            if self.clear_button_overlay:
+                self.clear_button_overlay.hide()
+            
+            if hasattr(self, 'input_field'):
+                try: # 尝试断开 dummy，以防万一
+                    self.input_field.returnPressed.disconnect(self.on_enter_pressed_disabled_dummy)
+                except TypeError: pass
+                try: # 先断开，再连接，防止重复连接
+                    self.input_field.returnPressed.disconnect(self.on_enter_pressed)
+                except TypeError: pass
+                self.input_field.returnPressed.connect(self.on_enter_pressed)
+            # -------------------------
+
+        else: # === 打开设置页面 ===
             print("Toggle: Settings page is hidden, showing it.")
-            # ---- 新增：确保设置页面的开关状态与当前设置同步 ----
+            
             if hasattr(self.settings_page, 'set_accumulate_switch_state'):
                 self.settings_page.set_accumulate_switch_state(self.accumulate_results)
-            # ---- 新增：同步 Fumo 开关状态 ----
             if hasattr(self.settings_page, 'set_fumo_switch_state'):
                 self.settings_page.set_fumo_switch_state(self.show_fumo_easter_egg)
-            # ---- 新增：同步 Baka 声音开关状态 ----
             if hasattr(self.settings_page, 'set_baka_audio_switch_state'):
                 self.settings_page.set_baka_audio_switch_state(self.play_baka_audio_on_success)
-            # ------------------------------------    
+            
             self._synchronize_cloned_button() 
-
             self.settings_button.setVisible(False)
-            if hasattr(self, 'left_placeholder'):
-                self.left_placeholder.setVisible(False) 
-
+            if hasattr(self, 'left_placeholder'): self.left_placeholder.setVisible(False) 
             self.cloned_settings_button.show()
-            self.cloned_settings_button.raise_() 
-            # 移除 self.cloned_button_fade_animation 的启动代码
-            # 如果之前设置了 opacity effect，现在没有动画了，确保它是完全可见的
-            if hasattr(self, 'cloned_button_opacity_effect'):
-                 self.cloned_button_opacity_effect.setOpacity(1.0)
+            self.cloned_settings_button.raise_()           
 
+            # ---- 禁用主界面交互 ----
+            if hasattr(self, 'input_field'):
+                self.input_field.setEnabled(False)
+
+            if self.calculate_button_overlay and hasattr(self, 'calculate_btn'):
+                # 确保在设置覆盖层几何前，布局是最新的
+                QApplication.processEvents() 
+                if self.calculate_btn.isVisible() and self.calculate_btn.geometry().isValid():
+                    self.calculate_button_overlay.setTargetWidget(self.calculate_btn)
+                    self.calculate_button_overlay.show()
+                    print(f"Overlay shown over calculate_btn at {self.calculate_btn.geometry()}")
+                else:
+                    print("Warning: Calculate button not ready or not visible for overlay.")
+                    self.calculate_button_overlay.hide()
+                # ---------- 新增：处理清除按钮覆盖层 ----------
+            if self.clear_button_overlay and hasattr(self, 'clear_button'):
+                QApplication.processEvents() # 确保布局更新
+                if self.clear_button.isVisible() and self.clear_button.geometry().isValid():
+                    self.clear_button_overlay.setTargetWidget(self.clear_button)
+                    self.clear_button_overlay.show()
+                    print(f"Overlay shown over clear_button at {self.clear_button.geometry()}")
+                else:
+                    print("Warning: Clear button not ready or not visible for overlay.")
+                    self.clear_button_overlay.hide()
+
+            if hasattr(self, 'input_field'):
+                try:
+                    self.input_field.returnPressed.disconnect(self.on_enter_pressed)
+                    # 可选连接到dummy，主要目的是确保旧的连接已断开
+                    # self.input_field.returnPressed.connect(self.on_enter_pressed_disabled_dummy)
+                except TypeError:
+                    print("Could not disconnect on_enter_pressed (maybe not connected).")
+            # -------------------------
 
             self.settings_page.update_theme_styling(self.current_theme, self.isActiveWindow())
-
+            
             if hasattr(self, 'blur_effect'):
                 self.blur_effect.setEnabled(True)
                 self.blur_animation.stop()
@@ -1169,8 +1221,11 @@ class NineSolverGUI(QMainWindow):
                 self.blur_animation.start()
             
             self.settings_page.show_animated()   
-   
-   # 新增槽函数：当设置页面开始隐藏动画时调用
+    def on_enter_pressed_disabled_dummy(self):
+        """一个空槽函数，用于在禁用回车计算时临时连接，或仅作为标记。"""
+        # print("Enter pressed while settings are open (dummy handler).")
+        pass
+    # 新增槽函数：当设置页面开始隐藏动画时调用
     def on_settings_hide_anim_started(self):
         print("Settings hide animation started, starting blur removal animation.") # 调试用
         animation_duration_hide = 300 # 与 SettingsPage 的 hide_animated 的 opacity 动画时长一致 (或者 geometry 的 250ms)
@@ -1276,28 +1331,41 @@ class NineSolverGUI(QMainWindow):
     def on_settings_page_fully_closed(self): 
         print("on_settings_page_fully_closed: Settings page animation finished.")
         
-        # 此处是设置页面几何和透明度动画完成的时间点。
-        # 模糊消失动画可能仍在进行或刚刚完成（通过 on_settings_hide_anim_started 触发）。
-        # 我们现在可以安全地切换按钮了。
-
         if hasattr(self, 'cloned_settings_button') and self.cloned_settings_button.isVisible():
             print("Hiding cloned_settings_button, showing original settings_button.")
             self.cloned_settings_button.hide()
-            # 重置克隆按钮的透明度（如果之前用了opacity effect但现在没动画了，也无妨）
-            if hasattr(self, 'cloned_button_opacity_effect'): 
-                 self.cloned_button_opacity_effect.setOpacity(1.0) 
+            if hasattr(self, 'cloned_button_opacity_effect'): # 检查是否存在
+                 if self.cloned_button_opacity_effect: # 再次检查是否为None
+                    self.cloned_button_opacity_effect.setOpacity(1.0) 
 
         if hasattr(self, 'settings_button') and not self.settings_button.isVisible():
             self.settings_button.setVisible(True)
         if hasattr(self, 'left_placeholder') and not self.left_placeholder.isVisible():
             self.left_placeholder.setVisible(True)
         
-        # 确保原始按钮的样式是最新的（例如，如果窗口激活状态在设置页面显示期间改变了）
         if hasattr(self, '_update_settings_button_style'):
             self._update_settings_button_style() 
         
-        # 注意：模糊效果的 setEnabled(False) 是由 _on_blur_anim_finished_disable_effect 单独处理的，
-        # 它会在模糊动画完成后执行。这个时序通常可以接受。  
+        # ---- 新增：恢复主界面交互 ----
+        if hasattr(self, 'input_field'):
+            self.input_field.setEnabled(True)
+            self.input_field.setFocus() # 将焦点还给输入框
+        
+        if hasattr(self, 'calculate_button_overlay') and self.calculate_button_overlay: # 确保已创建
+            self.calculate_button_overlay.hide()
+
+        if hasattr(self, 'clear_button_overlay') and self.clear_button_overlay:
+            self.clear_button_overlay.hide()
+        
+        if hasattr(self, 'input_field'):
+            try: # 尝试断开 dummy
+                self.input_field.returnPressed.disconnect(self.on_enter_pressed_disabled_dummy)
+            except TypeError: pass
+            try: # 先断开，再连接，防止重复连接
+                self.input_field.returnPressed.disconnect(self.on_enter_pressed)
+            except TypeError: pass
+            self.input_field.returnPressed.connect(self.on_enter_pressed)
+         
     def showEvent(self, event_obj: QEvent):
         """窗口第一次显示时，应用完整的主题并强制使用激活样式。"""
         super().showEvent(event_obj) 
@@ -1489,6 +1557,12 @@ class NineSolverGUI(QMainWindow):
         self.calculate_btn.clicked.connect(self.start_calculation)
         input_layout.addWidget(self.calculate_btn)
         frame_layout.addLayout(input_layout)
+
+        # self.main_frame 是 input_layout (包含 calculate_btn) 的容器的 widget
+        if hasattr(self, 'main_frame'): 
+            self.calculate_button_overlay = OverlayWidget(self.main_frame)
+        else: # Fallback, though main_frame should exist
+            self.calculate_button_overlay = OverlayWidget(self.main_central_widget)
         
         # 分隔线
         self.separator = QFrame()
@@ -1520,7 +1594,13 @@ class NineSolverGUI(QMainWindow):
         results_header_layout.addWidget(self.clear_button)
 
         frame_layout.addLayout(results_header_layout) # 将这个水平布局添加到垂直的 frame_layout
-        
+
+        # ---- 新增：在 clear_button 之后创建其覆盖层 ----
+        # 父对象应该是 self.clear_button 所在的容器，这里也是 self.main_frame
+        if hasattr(self, 'main_frame'):
+            self.clear_button_overlay = OverlayWidget(self.main_frame)
+        else: # Fallback
+            self.clear_button_overlay = OverlayWidget(self.main_central_widget)
         
         self.result_display = QTextEdit()
         self.result_display.setReadOnly(True)
