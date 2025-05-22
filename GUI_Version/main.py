@@ -32,8 +32,8 @@ class ImprovedNineExpressionFinder:
     def __init__(self):
         self._disable_divisions = False
         self.base_numbers = {Decimal('9'), Decimal('99'), Decimal('999')}
-        from audio_data import AUDIO_DATA
-        self.AUDIO_DATA = AUDIO_DATA
+        from baka_sound import BAKA_DATA
+        self.BAKA_DATA = BAKA_DATA
         self.large_number_threshold = 5000  # 大数阈值
         from expression_cache import EXPRESSION_CACHE
         self.expression_cache = EXPRESSION_CACHE
@@ -48,7 +48,7 @@ class ImprovedNineExpressionFinder:
     def _play_audio(self):
         try:
             # 解码 base64 音频数据
-            audio_binary = base64.b64decode(self.AUDIO_DATA)
+            audio_binary = base64.b64decode(self.BAKA_DATA)
 
             # 创建内存中的 wave 文件对象
             audio_file = io.BytesIO(audio_binary)
