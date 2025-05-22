@@ -394,8 +394,10 @@ class SettingsPage(QWidget):
     hide_animation_started = pyqtSignal() # 定义隐藏动画开始信号
     accumulate_setting_changed = pyqtSignal(bool)
     fumo_easter_egg_changed = pyqtSignal(bool)
+    baka_audio_setting_changed = pyqtSignal(bool)
     def __init__(self, parent=None, initial_accumulate_state=False, 
-                 initial_fumo_state=False, fumo_icon_pixmap: QPixmap = None): 
+                 initial_fumo_state=False, initial_baka_audio_state=True, 
+                 fumo_icon_pixmap: QPixmap = None): 
         super().__init__(parent)
         self.setObjectName("settingsPage")
         self.setWindowFlags(Qt.WindowType.FramelessWindowHint | Qt.WindowType.NoDropShadowWindowHint)
@@ -439,36 +441,56 @@ class SettingsPage(QWidget):
         setting_item_layout_1.addWidget(self.accumulate_switch, 0, Qt.AlignmentFlag.AlignRight) # <--- 开关靠右对齐
 
         main_settings_layout.addLayout(setting_item_layout_1)
-        
-        setting_item_layout_2 = QHBoxLayout()
-        setting_item_layout_2.setContentsMargins(0, 5, 0, 5)
 
-        self.fumo_icon_label = QLabel(self) # 用于显示 Fumo 小图标
+         # ---- 设置项2：Baka 声音开关 ----
+        setting_item_layout_baka_audio = QHBoxLayout()
+        setting_item_layout_baka_audio.setContentsMargins(0, 5, 0, 5)
+
+        self.baka_audio_label = QLabel("播放Baka音效:")
+        baka_audio_label_font = QFont() # 与 accumulate_label 字体一致
+        baka_audio_label_font.setPointSize(11)
+        baka_audio_label_font.setBold(True)
+        self.baka_audio_label.setFont(baka_audio_label_font)
+        self.baka_audio_label.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed)
+        setting_item_layout_baka_audio.addWidget(self.baka_audio_label, 1)
+
+        self.baka_audio_switch = CustomSwitch(self)
+        self.baka_audio_switch.setChecked(initial_baka_audio_state) # 设置初始状态
+        self.baka_audio_switch.toggled.connect(self.on_baka_audio_switch_changed)
+        self.baka_audio_switch.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
+        setting_item_layout_baka_audio.addWidget(self.baka_audio_switch, 0, Qt.AlignmentFlag.AlignRight)
+
+        main_settings_layout.addLayout(setting_item_layout_baka_audio)
+        # -----------------------------
+        
+        setting_item_layout_fumo = QHBoxLayout() # 重命名布局变量以避免冲突
+        setting_item_layout_fumo.setContentsMargins(0, 5, 0, 5)
+
+        self.fumo_icon_label = QLabel(self) 
         if fumo_icon_pixmap and not fumo_icon_pixmap.isNull():
-            # 缩小 Fumo 图标作为设置项的提示图标
-            icon_size = 24 # 或者 self.accumulate_label.fontMetrics().height()
+            icon_size = 24 
             self.fumo_icon_label.setPixmap(fumo_icon_pixmap.scaled(
                 icon_size, icon_size, 
                 Qt.AspectRatioMode.KeepAspectRatio, 
                 Qt.TransformationMode.SmoothTransformation
             ))
         else:
-            self.fumo_icon_label.setText("Fumo彩蛋:") # 如果图片加载失败，显示文字
-            fumo_label_font = QFont() # 与 accumulate_label 字体一致
+            self.fumo_icon_label.setText("Fumo:") 
+            fumo_label_font = QFont() 
             fumo_label_font.setPointSize(11)
             fumo_label_font.setBold(True)
             self.fumo_icon_label.setFont(fumo_label_font)
 
         self.fumo_icon_label.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed)
-        setting_item_layout_2.addWidget(self.fumo_icon_label, 1) # 伸展因子为1
+        setting_item_layout_fumo.addWidget(self.fumo_icon_label, 1)
 
         self.fumo_switch = CustomSwitch(self)
         self.fumo_switch.setChecked(initial_fumo_state)
         self.fumo_switch.toggled.connect(self.on_fumo_switch_changed)
         self.fumo_switch.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
-        setting_item_layout_2.addWidget(self.fumo_switch, 0, Qt.AlignmentFlag.AlignRight)
+        setting_item_layout_fumo.addWidget(self.fumo_switch, 0, Qt.AlignmentFlag.AlignRight)
 
-        main_settings_layout.addLayout(setting_item_layout_2)
+        main_settings_layout.addLayout(setting_item_layout_fumo)
 
         self.placeholder_label = QLabel("") # 或者保留一个空的，如果以后想显示动态内容
         self.placeholder_label.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
@@ -500,11 +522,17 @@ class SettingsPage(QWidget):
 
     def set_fumo_switch_state(self, checked): # <--- 新增：从外部设置Fumo开关状态
         self.fumo_switch.setChecked(checked)
+    # ---- 新增 Baka 声音的槽函数和 setter ----
+    def on_baka_audio_switch_changed(self, checked):
+        self.baka_audio_setting_changed.emit(checked)
+
+    def set_baka_audio_switch_state(self, checked):
+        self.baka_audio_switch.setChecked(checked)
+
+    # ---- 新增：一个方法来从外部设置开关状态 (如果需要的话) ----
     def on_accumulate_switch_changed(self, checked):
         """当开关状态改变时，发出信号。"""
         self.accumulate_setting_changed.emit(checked)
-
-    # ---- 新增：一个方法来从外部设置开关状态 (如果需要的话) ----
     def set_accumulate_switch_state(self, checked):
         self.accumulate_switch.setChecked(checked)
     def show_animated(self):
@@ -892,6 +920,7 @@ class NineSolverGUI(QMainWindow):
         self._theme_initialized = False # 添加一个标志位        
         self.accumulate_results = False # 新增：用于控制是否累积结果
         self.show_fumo_easter_egg = False # <--- 新增：Fumo彩蛋开关状态，默认关闭
+        self.play_baka_audio_on_success = True # <--- 新增：Baka声音开关状态，默认开启
         self.fumo_pixmap = None # <--- 新增：用于存储加载后的Fumo QPixmap
         # 新增：预加载 Fumo 图片
         try:
@@ -939,12 +968,14 @@ class NineSolverGUI(QMainWindow):
             self, 
             initial_accumulate_state=self.accumulate_results,
             initial_fumo_state=self.show_fumo_easter_egg, # <--- 传递 Fumo 初始状态
+            initial_baka_audio_state=self.play_baka_audio_on_success,# <--- 传递 Baka 声音初始状态
             fumo_icon_pixmap=self.fumo_pixmap             # <--- 传递 Fumo Pixmap 作为图标
         )
         self.settings_page.closed.connect(self.on_settings_page_fully_closed)
-        self.settings_page.hide_animation_started.connect(self.on_settings_hide_anim_started) # <--- 新增：连接新信号
+        self.settings_page.hide_animation_started.connect(self.on_settings_hide_anim_started) 
         self.settings_page.accumulate_setting_changed.connect(self.on_accumulate_setting_changed)
         self.settings_page.fumo_easter_egg_changed.connect(self.on_fumo_easter_egg_changed)
+        self.settings_page.baka_audio_setting_changed.connect(self.on_baka_audio_setting_changed) # <--- 连接baka信号
         # ---- 新增：创建克隆齿轮按钮 ----
         self.cloned_settings_button = QPushButton(self) # 父对象是主窗口 self
         self.cloned_settings_button.setObjectName("clonedSettingsButton")
@@ -976,6 +1007,10 @@ class NineSolverGUI(QMainWindow):
         # 连接系统调色板变化信号
         QApplication.instance().paletteChanged.connect(self.handle_theme_change)
 
+    def on_baka_audio_setting_changed(self, checked):
+        """处理来自设置页面的Baka音效设置变化。"""
+        self.play_baka_audio_on_success = checked
+        print(f"Play Baka audio setting changed to: {self.play_baka_audio_on_success}")
     def on_fumo_easter_egg_changed(self, checked):
         """处理来自设置页面的Fumo彩蛋设置变化。"""
         self.show_fumo_easter_egg = checked
@@ -1104,6 +1139,10 @@ class NineSolverGUI(QMainWindow):
             # ---- 新增：同步 Fumo 开关状态 ----
             if hasattr(self.settings_page, 'set_fumo_switch_state'):
                 self.settings_page.set_fumo_switch_state(self.show_fumo_easter_egg)
+            # ---- 新增：同步 Baka 声音开关状态 ----
+            if hasattr(self.settings_page, 'set_baka_audio_switch_state'):
+                self.settings_page.set_baka_audio_switch_state(self.play_baka_audio_on_success)
+            # ------------------------------------    
             self._synchronize_cloned_button() 
 
             self.settings_button.setVisible(False)
@@ -1543,8 +1582,9 @@ class NineSolverGUI(QMainWindow):
 
         if expr_str: 
             self.status_label.setText(f"计算完成 - 耗时 {elapsed:.2f}秒")
-            finder = ImprovedNineExpressionFinder() 
-            finder.play_baka_sound()
+            if self.play_baka_audio_on_success: # <--- 检查开关状态
+                finder = ImprovedNineExpressionFinder() 
+                finder.play_baka_sound()
             self.trigger_fumo_splash()
         else:
             self.status_label.setText("未找到结果")
