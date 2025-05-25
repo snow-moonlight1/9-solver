@@ -73,14 +73,21 @@
 
 ## 🛠️ 快速开始
 
-### 环境要求
+### 1.环境要求
 
 - Python 3.8+
 - PyQt6
 - PyAudio
 - 确保系统已安装音频播放所需的库（Linux: libportaudio2, macOS: portaudio）
 
-**安装项目依赖 (推荐)**
+### 2.克隆本仓库
+
+```bash
+git clone https://github.com/snow-moonlight1/9-solver
+```
+
+
+### 3.安装项目依赖 (推荐)
 ```bash
 pip install -r requirements.txt
 ```
@@ -97,7 +104,7 @@ sudo apt install libportaudio2
 pip install PyQt6 PyAudio
 ```
 
-## 运行
+### 4.运行
 
 ```bash
 python main.py
@@ -105,7 +112,7 @@ python main.py
 python gui_main.py
 ```
 
-## 示例输入输出
+**示例输入输出**
 
 ```bash
 目标: 114514 
