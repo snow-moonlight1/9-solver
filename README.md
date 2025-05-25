@@ -2,7 +2,9 @@
 
 一个基于9、99、999三个基础数字，通过加减乘除运算生成目标整数的智能推理器
 
-<img title="" src="./README/GUI.png" alt="GUI.png" data-align="center" width="550">
+<img title="" src="./README/GUI_Light.png" alt="GUI.png" data-align="center" width="550">
+
+<img title="" src="./README/GUI_Dark.png" alt="GUI.png" data-align="center" width="550">
 
 <img title="" src="./README/Console.png" alt="Console.png" data-align="center" width="550">
 
@@ -54,8 +56,8 @@
  ### GUI 亮点
  
  - **直观易用的用户界面**: 基于 PyQt6 构建，提供友好的图形界面，方便用户输入表达式和查看结果。
- - **实时反馈**: 在用户输入时提供即时语法检查和计算结果预览。
  - **音频反馈**: 可选的音频提示功能，增强用户体验。
+ - **托盘图标**：方便用户找到应用
  
  ### 后端亮点
  - **高效的表达式解析与计算**: 能够快速准确地处理复杂的数字
@@ -78,8 +80,8 @@
 - PyAudio
 - 确保系统已安装音频播放所需的库（Linux: libportaudio2, macOS: portaudio）
 
+**安装项目依赖 (推荐)**
 ```bash
-# 安装项目依赖 (推荐)
 pip install -r requirements.txt
 ```
 
