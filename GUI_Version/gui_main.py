@@ -1259,7 +1259,6 @@ class NineSolverGUI(QMainWindow):
             self._update_cloned_button_realtime_position() # 确保位置最新
             self._synchronize_cloned_button()
             self.settings_button_opacity_effect.setOpacity(0.0)
-            if hasattr(self, 'left_placeholder'): self.left_placeholder.setVisible(False) 
             self.cloned_settings_button.show()
             self.cloned_settings_button.raise_()           
 
@@ -1428,8 +1427,6 @@ class NineSolverGUI(QMainWindow):
 
         if hasattr(self, 'settings_button_opacity_effect'):
             self.settings_button_opacity_effect.setOpacity(1.0)
-        if hasattr(self, 'left_placeholder') and not self.left_placeholder.isVisible():
-            self.left_placeholder.setVisible(True)
         
         if hasattr(self, '_update_settings_button_style'):
             self._update_settings_button_style() 
