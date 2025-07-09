@@ -1010,14 +1010,6 @@ class NineSolverGUI(QMainWindow):
         self.settings_page.accumulate_setting_changed.connect(self.on_accumulate_setting_changed)
         self.settings_page.fumo_easter_egg_changed.connect(self.on_fumo_easter_egg_changed)
         self.settings_page.baka_audio_setting_changed.connect(self.on_baka_audio_setting_changed) # <--- 连接baka信号
-        # ---- 新增：创建克隆齿轮按钮 ----
-        self.cloned_settings_button = QPushButton(self) # 父对象是主窗口 self
-        self.cloned_settings_button.setObjectName("clonedSettingsButton")
-        # 外观属性将在 init_ui 后，根据原始按钮设置，并由 _update_cloned_button_style 更新
-        self.cloned_settings_button.setFlat(True)
-        self.cloned_settings_button.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.cloned_settings_button.hide() # 默认隐藏
-        self.cloned_settings_button.clicked.connect(self.toggle_settings_page) # 点击也触发toggle
 
 
         # 创建托盘菜单
@@ -1047,52 +1039,21 @@ class NineSolverGUI(QMainWindow):
         """
         在paintEvent触发时调用，以最快速度同步克隆按钮的位置。
         """
-        # 只在克隆按钮可见时执行，避免不必要的计算
         if hasattr(self, 'cloned_settings_button') and self.cloned_settings_button.isVisible():
-            # 获取原始按钮在主窗口坐标系中的位置
-            original_button_global_pos = self.settings_button.mapToGlobal(QPoint(0, 0))
-            cloned_button_pos_in_main_window = self.mapFromGlobal(original_button_global_pos)
+            
+            #--- 修改代码 ---
+            # 使用 mapTo 将原始按钮的左上角(0,0)位置映射到 main_central_widget 的坐标系中。
+            # 这是获取 "孙子" 控件在 "祖父" 控件中位置的正确方法。
+            target_pos = self.settings_button.mapTo(self.main_central_widget, QPoint(0, 0))
 
-            # 如果位置不同，则移动克隆按钮
-            if self.cloned_settings_button.pos() != cloned_button_pos_in_main_window:
-                self.cloned_settings_button.move(cloned_button_pos_in_main_window)
+            # 移动克隆按钮到计算出的精确位置
+            if self.cloned_settings_button.pos() != target_pos:
+                self.cloned_settings_button.move(target_pos)
 
-    def _update_cloned_button_realtime_position(self):
-        """
-        实时更新克隆按钮的位置，使其与原始按钮重合。
-        这个方法应该在原始按钮的位置已经更新后调用（例如在resizeEvent中）。
-        """
-        if not self.isVisible() or \
-        not hasattr(self, 'settings_button') or \
-        not hasattr(self, 'cloned_settings_button'):
-            return
+            # 为保险起见，同时同步大小。
+            if self.cloned_settings_button.size() != self.settings_button.size():
+                 self.cloned_settings_button.setFixedSize(self.settings_button.size())
 
-        try:
-            # 确保布局已完成更新
-            QApplication.processEvents()
-            
-            # 获取原始按钮在其父控件中的几何位置
-            original_geometry = self.settings_button.geometry()
-            
-            # 将原始按钮的位置映射到主窗口坐标系
-            original_button_global_pos = self.settings_button.mapToGlobal(QPoint(0, 0))
-            cloned_button_pos_in_main_window = self.mapFromGlobal(original_button_global_pos)
-            
-            # 调试信息
-            print(f"Original button geometry: {original_geometry}")
-            print(f"Original button global pos: {original_button_global_pos}")
-            print(f"Cloned button target pos: {cloned_button_pos_in_main_window}")
-            
-            # 更新克隆按钮位置和大小
-            if self.cloned_settings_button.pos() != cloned_button_pos_in_main_window:
-                self.cloned_settings_button.move(cloned_button_pos_in_main_window)
-                
-            if self.cloned_settings_button.size() != original_geometry.size():
-                self.cloned_settings_button.setFixedSize(original_geometry.size())
-                
-        except Exception as e:
-            print(f"Error in _update_cloned_button_realtime_position: {e}")
-    
     def resizeEvent(self, event: QResizeEvent): 
         super().resizeEvent(event)
         # print(f"--- NineSolverGUI resizeEvent --- New size: {event.size()}")
@@ -1124,10 +1085,7 @@ class NineSolverGUI(QMainWindow):
         
         # 2. 更新图标内容 (通过调用样式更新，确保主题正确)
         self._update_cloned_button_style() 
-        
-        # 3. 同步位置
-        self._update_cloned_button_realtime_position() # <--- 使用新的实时位置同步函数
-        
+                
         # 4. 确保层级 (如果克隆按钮当前应该可见，虽然调用此函数时它可能正要显示)
         if self.cloned_settings_button.isVisible(): 
             self.cloned_settings_button.raise_()    
@@ -1256,7 +1214,6 @@ class NineSolverGUI(QMainWindow):
             
      
             self._update_cloned_button_style() # 确保图标正确
-            self._update_cloned_button_realtime_position() # 确保位置最新
             self._synchronize_cloned_button()
             self.settings_button_opacity_effect.setOpacity(0.0)
             self.cloned_settings_button.show()
@@ -1574,6 +1531,15 @@ class NineSolverGUI(QMainWindow):
         main_layout = QVBoxLayout(self.main_central_widget)
         main_layout.setContentsMargins(20, 20, 20, 20)
         main_layout.setSpacing(15) # 统一间距
+
+        # ---- 新增：创建克隆齿轮按钮 ----
+        self.cloned_settings_button = QPushButton(self) # 父对象是主窗口 self
+        self.cloned_settings_button.setObjectName("clonedSettingsButton")
+        # 外观属性将在 init_ui 后，根据原始按钮设置，并由 _update_cloned_button_style 更新
+        self.cloned_settings_button.setFlat(True)
+        self.cloned_settings_button.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.cloned_settings_button.hide() # 默认隐藏
+        self.cloned_settings_button.clicked.connect(self.toggle_settings_page) # 点击也触发toggle
 
         # 1. 创建 QLabel 实例 (self.title_label, self.description)
         self.title_label = QLabel("⑨ 表达式求解器")
