@@ -2,9 +2,9 @@
 import sys
 from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
                              QLabel, QLineEdit, QPushButton, QTextEdit, QFrame, QSizePolicy, 
-                             QSystemTrayIcon, QMenu, QGraphicsBlurEffect)
-from PyQt6.QtCore import Qt, QThread, pyqtSignal, QPropertyAnimation, QEasingCurve, QSequentialAnimationGroup, QEvent, QRect, QParallelAnimationGroup, QSize, QTimer
-from PyQt6.QtGui import QFont, QIcon, QColor, QPixmap, QPalette, QImage, QTextCursor, QPaintEvent, QScreen
+                             QSystemTrayIcon, QMenu, QGraphicsBlurEffect,QGraphicsOpacityEffect)
+from PyQt6.QtCore import Qt, QThread, pyqtSignal, QPropertyAnimation, QEasingCurve, QSequentialAnimationGroup, QEvent, QRect, QParallelAnimationGroup, QSize, QTimer, QPoint, QAbstractAnimation 
+from PyQt6.QtGui import QFont, QIcon, QColor, QPixmap, QPalette, QImage, QTextCursor, QPaintEvent, QScreen, QMouseEvent, QResizeEvent
 
 from main import ImprovedNineExpressionFinder
 from typing import Optional
@@ -297,81 +297,47 @@ class WorkerThread(QThread):
             self.error_occurred.emit(str(e))
             
 
+# gui_main.py
+
 class AnimatedPushButton(QPushButton):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.animation_group = QSequentialAnimationGroup(self)
         
-        # 按下动画
         self.press_anim = QPropertyAnimation(self, b"geometry")
         self.press_anim.setDuration(80)
         self.press_anim.setEasingCurve(QEasingCurve.Type.OutQuad)
         
-        # 释放动画
         self.release_anim = QPropertyAnimation(self, b"geometry")
         self.release_anim.setDuration(120)
         self.release_anim.setEasingCurve(QEasingCurve.Type.OutBack)
         
         self.animation_group.addAnimation(self.press_anim)
         self.animation_group.addAnimation(self.release_anim)
-        self.original_geometry = self.geometry()
-        
+        # self.original_geometry = self.geometry() # 由于动画基于实时几何，此行不再必需
+
     def triggerAnimation(self):
         if self.animation_group.state() != QPropertyAnimation.State.Running:
-            # 获取按钮当前的几何形状作为动画的基准
             current_geometry = self.geometry() 
-
-            # 按下动画：按钮向下微移
-            # 创建当前几何形状的副本进行修改
             pressed_geometry = QRect(current_geometry) 
-            pressed_geometry.translate(0, 2) # 向下移动2像素 (你可以调整这个 '2' 值)
-                                             # 例如，用 1 会更细微，用 3 会更明显
+            pressed_geometry.translate(0, 2) 
 
-            # 设置按下动画的起止值
             self.press_anim.setStartValue(current_geometry)
             self.press_anim.setEndValue(pressed_geometry)
             
-            # 设置释放动画的起止值
             self.release_anim.setStartValue(pressed_geometry)
-            self.release_anim.setEndValue(current_geometry) # 恢复到动画开始前的几何形状
+            self.release_anim.setEndValue(current_geometry) 
             
-            # 启动动画组
             self.animation_group.start()
             
-    def mousePressEvent(self, event):
+    def mousePressEvent(self, event: QMouseEvent): # <--- 建议类型为 QMouseEvent
         self.triggerAnimation()
         super().mousePressEvent(event)
         
-    def resizeEvent(self, event: QEvent): 
-        super().resizeEvent(event)
-        # 如果窗口大小调整可能影响 settings_button 的大小（虽然现在是固定的）
-        # 或者影响其在布局中的相对位置，进而影响 mapToGlobal
-        if hasattr(self, 'settings_button') and hasattr(self, 'left_placeholder'):
-            # 如果 settings_button 的宽度是动态的，这里需要更新
-            # self.left_placeholder.setFixedWidth(self.settings_button.width())
-            pass # 当前 settings_button 大小固定，init_ui 时已设置 left_placeholder
-
-        # 同步克oned按钮的位置
-        # 只有当设置页面关闭（即原始按钮应该可见）或克隆按钮当前可见时才同步
-        if (hasattr(self, 'settings_button') and self.settings_button.isVisible()) or \
-           (hasattr(self, 'cloned_settings_button') and self.cloned_settings_button.isVisible()):
-            if hasattr(self, '_synchronize_cloned_button_position'):
-                 QTimer.singleShot(0, self._synchronize_cloned_button_position) # 延迟一点确保布局更新
-
-    def _synchronize_cloned_button(self):
-        """将克隆按钮的属性（大小、图标、位置）与原始按钮同步。"""
-        if not hasattr(self, 'settings_button') or not hasattr(self, 'cloned_settings_button'):
-            return
-
-        # 同步大小和IconSize (图标本身由 _update_cloned_button_style 设置)
-        self.cloned_settings_button.setFixedSize(self.settings_button.size())
-        self.cloned_settings_button.setIconSize(self.settings_button.iconSize())
-        
-        self._synchronize_cloned_button_position() # 调用位置同步
-        self._update_cloned_button_style() # 确保图标也同步
-        
-        if self.cloned_settings_button.isVisible(): # 如果克隆按钮应该可见，则确保它在顶层
-            self.cloned_settings_button.raise_()                  
+    # resizeEvent 可以移除，因为 original_geometry 不再关键
+    # def resizeEvent(self, event: QResizeEvent): # <--- 建议类型为 QResizeEvent
+    #     super().resizeEvent(event)
+    #     # self.original_geometry = self.geometry() # 不再必需                  
 
 class SettingsPage(QWidget):
     closed = pyqtSignal() # 定义一个关闭信号
@@ -497,6 +463,41 @@ class SettingsPage(QWidget):
         self.parallel_anim_group = QParallelAnimationGroup(self)
         self.parallel_anim_group.addAnimation(self.animation)
         self.parallel_anim_group.addAnimation(self.opacity_animation)
+
+    def update_geometry_based_on_parent(self):
+        """
+        根据父窗口的大小重新计算并设置自己的几何形状。
+        这应该在窗口已经显示且非动画状态时调用。
+        """
+        if not self.parentWidget() or not self.isVisible():
+            # print("SettingsPage: Skipping geometry update - no parent or not visible.")
+            return
+        
+        # 确保不在动画中 (这个检查在 NineSolverGUI.resizeEvent 中已经做了，这里可以作为双重保险)
+        # if self.parallel_anim_group.state() != QParallelAnimationGroup.State.Idle:
+        #     print("SettingsPage: Skipping geometry update - animating.")
+        #     return
+            
+        parent_rect = self.parentWidget().rect()
+        
+        # --- 使用与 show_animated 中一致的计算逻辑 ---
+        target_width = int(parent_rect.width() * 0.3) 
+        min_sensible_width = 280 
+        target_width = max(target_width, min_sensible_width)
+        
+        target_height = int(parent_rect.height() * 0.6)
+        min_sensible_height = 200 # 你可以根据内容调整这个值
+        target_height = max(target_height, min_sensible_height)
+        # ---------------------------------------------
+
+        target_x = parent_rect.center().x() - target_width // 2
+        target_y = parent_rect.center().y() - target_height // 2
+        
+        new_geometry = QRect(target_x, target_y, target_width, target_height)
+
+        if self.geometry() != new_geometry: 
+            self.setGeometry(new_geometry)
+            # print(f"SettingsPage geometry updated by parent resize to: {new_geometry}")
 
     def on_fumo_switch_changed(self, checked): # <--- 新增 Fumo 开关的槽函数
         """当Fumo开关状态改变时，发出信号。"""
@@ -927,6 +928,16 @@ class FumoSplash(QWidget):
         # 如果背景完全透明，QLabel会自己绘制
         super().paintEvent(event) # 我们依赖 WA_TranslucentBackground 和 QLabel 来绘制
 
+class MainContentWidget(QWidget):
+    """一个自定义的QWidget，它在每次paintEvent时发出一个信号。"""
+    paintEventTriggered = pyqtSignal()
+
+    def paintEvent(self, event: QPaintEvent):
+        # 首先调用父类的paintEvent来完成标准绘制
+        super().paintEvent(event)
+        # 然后发出信号，通知父窗口（NineSolverGUI）现在是更新位置的最佳时机
+        self.paintEventTriggered.emit()
+
 class NineSolverGUI(QMainWindow):
     def __init__(self):
         super().__init__() 
@@ -966,6 +977,11 @@ class NineSolverGUI(QMainWindow):
         self.blur_effect = QGraphicsBlurEffect(self) # 父对象可以是 self
         self.blur_effect.setBlurRadius(0)  # 设置模糊半径，可以调整
         self.blur_effect.setEnabled(False) # 默认不启用
+
+        # --- 添加代码 ---
+        self.settings_button_opacity_effect = QGraphicsOpacityEffect(self)
+        self.settings_button_opacity_effect.setOpacity(1.0) # 初始完全不透明
+        
 
         # 初始化模糊动画
         self.blur_animation = QPropertyAnimation(self.blur_effect, b"blurRadius") # <--- 新增
@@ -1026,6 +1042,95 @@ class NineSolverGUI(QMainWindow):
         # 连接系统调色板变化信号
         QApplication.instance().paletteChanged.connect(self.handle_theme_change)
 
+    def _sync_clone_position_on_paint(self):
+        """
+        在paintEvent触发时调用，以最快速度同步克隆按钮的位置。
+        """
+        # 只在克隆按钮可见时执行，避免不必要的计算
+        if hasattr(self, 'cloned_settings_button') and self.cloned_settings_button.isVisible():
+            # 获取原始按钮在主窗口坐标系中的位置
+            original_button_global_pos = self.settings_button.mapToGlobal(QPoint(0, 0))
+            cloned_button_pos_in_main_window = self.mapFromGlobal(original_button_global_pos)
+
+            # 如果位置不同，则移动克隆按钮
+            if self.cloned_settings_button.pos() != cloned_button_pos_in_main_window:
+                self.cloned_settings_button.move(cloned_button_pos_in_main_window)
+
+    def _update_cloned_button_realtime_position(self):
+        """
+        实时更新克隆按钮的位置，使其与原始按钮重合。
+        这个方法应该在原始按钮的位置已经更新后调用（例如在resizeEvent中）。
+        """
+        if not self.isVisible() or \
+        not hasattr(self, 'settings_button') or \
+        not hasattr(self, 'cloned_settings_button'):
+            return
+
+        try:
+            # 确保布局已完成更新
+            QApplication.processEvents()
+            
+            # 获取原始按钮在其父控件中的几何位置
+            original_geometry = self.settings_button.geometry()
+            
+            # 将原始按钮的位置映射到主窗口坐标系
+            original_button_global_pos = self.settings_button.mapToGlobal(QPoint(0, 0))
+            cloned_button_pos_in_main_window = self.mapFromGlobal(original_button_global_pos)
+            
+            # 调试信息
+            print(f"Original button geometry: {original_geometry}")
+            print(f"Original button global pos: {original_button_global_pos}")
+            print(f"Cloned button target pos: {cloned_button_pos_in_main_window}")
+            
+            # 更新克隆按钮位置和大小
+            if self.cloned_settings_button.pos() != cloned_button_pos_in_main_window:
+                self.cloned_settings_button.move(cloned_button_pos_in_main_window)
+                
+            if self.cloned_settings_button.size() != original_geometry.size():
+                self.cloned_settings_button.setFixedSize(original_geometry.size())
+                
+        except Exception as e:
+            print(f"Error in _update_cloned_button_realtime_position: {e}")
+    
+    def resizeEvent(self, event: QResizeEvent): 
+        super().resizeEvent(event)
+        # print(f"--- NineSolverGUI resizeEvent --- New size: {event.size()}")
+
+        # 2. 更新设置页面的位置和大小 (这个逻辑保持不变)
+        if hasattr(self, 'settings_page') and self.settings_page.isVisible():
+            if self.settings_page.parallel_anim_group.state() == QAbstractAnimation.State.Stopped and \
+               abs(self.settings_page.windowOpacity() - 1.0) < 0.01:
+                if hasattr(self.settings_page, 'update_geometry_based_on_parent'):
+                    self.settings_page.update_geometry_based_on_parent()
+
+    def _synchronize_cloned_button(self):
+        """
+        在需要完全同步克隆按钮时调用（例如，在它将要显示之前，或窗口首次显示时）。
+        同步大小、图标大小、图标内容（通过调用样式更新）和位置。
+        """
+        if not hasattr(self, 'settings_button') or not hasattr(self, 'cloned_settings_button'):
+            return
+        # print("SYNC_FULL: _synchronize_cloned_button called")
+        
+        # 1. 同步大小和IconSize
+        original_size = self.settings_button.size()
+        original_icon_size = self.settings_button.iconSize()
+
+        if self.cloned_settings_button.size() != original_size:
+            self.cloned_settings_button.setFixedSize(original_size)
+        if self.cloned_settings_button.iconSize() != original_icon_size:
+            self.cloned_settings_button.setIconSize(original_icon_size)
+        
+        # 2. 更新图标内容 (通过调用样式更新，确保主题正确)
+        self._update_cloned_button_style() 
+        
+        # 3. 同步位置
+        self._update_cloned_button_realtime_position() # <--- 使用新的实时位置同步函数
+        
+        # 4. 确保层级 (如果克隆按钮当前应该可见，虽然调用此函数时它可能正要显示)
+        if self.cloned_settings_button.isVisible(): 
+            self.cloned_settings_button.raise_()    
+    
     def on_baka_audio_setting_changed(self, checked):
         """处理来自设置页面的Baka音效设置变化。"""
         self.play_baka_audio_on_success = checked
@@ -1101,28 +1206,7 @@ class NineSolverGUI(QMainWindow):
                 self.historical_results.append(last_valid_result) # 只保留最后一个有效结果
                 self._render_all_historical_results() # 重新渲染这一个
             # else: 历史中没有有效结果，保持空白
-    def _synchronize_cloned_button(self):
-        """将克隆按钮的属性（大小、图标）与原始按钮同步，并设置其初始位置。"""
-        if not hasattr(self, 'settings_button') or not hasattr(self, 'cloned_settings_button'):
-            return
-
-        # 同步大小
-        self.cloned_settings_button.setFixedSize(self.settings_button.size())
-        self.cloned_settings_button.setIconSize(self.settings_button.iconSize())
-
-        # 同步图标 (通过 _update_cloned_button_style 来处理更佳，因为它依赖主题)
-        # self._update_cloned_button_style() # 确保调用它来设置正确的初始图标
-
-        # 计算原始按钮在主窗口中的绝对位置
-        # 需要确保 self.settings_button 已经有正确的几何形状
-        # 这通常在窗口显示后才最准确，但我们可以在 init_ui 后尝试获取
-        # 如果在 init_ui 后立即获取位置不准，可能需要延迟到 showEvent 或第一次 resizeEvent
-        original_button_global_pos = self.settings_button.mapToGlobal(self.settings_button.rect().topLeft())
-        cloned_button_pos_in_main_window = self.mapFromGlobal(original_button_global_pos)
-        self.cloned_settings_button.move(cloned_button_pos_in_main_window)
         
-        # 确保克隆按钮在最上层 (相对于主窗口内的其他非顶层子部件)
-        self.cloned_settings_button.raise_()    
     def toggle_settings_page(self):
         settings_page_anim_running = self.settings_page.parallel_anim_group.state() == QParallelAnimationGroup.State.Running
         blur_anim_running = self.blur_animation.state() == QPropertyAnimation.State.Running
@@ -1169,8 +1253,11 @@ class NineSolverGUI(QMainWindow):
             if hasattr(self.settings_page, 'set_baka_audio_switch_state'):
                 self.settings_page.set_baka_audio_switch_state(self.play_baka_audio_on_success)
             
-            self._synchronize_cloned_button() 
-            self.settings_button.setVisible(False)
+     
+            self._update_cloned_button_style() # 确保图标正确
+            self._update_cloned_button_realtime_position() # 确保位置最新
+            self._synchronize_cloned_button()
+            self.settings_button_opacity_effect.setOpacity(0.0)
             if hasattr(self, 'left_placeholder'): self.left_placeholder.setVisible(False) 
             self.cloned_settings_button.show()
             self.cloned_settings_button.raise_()           
@@ -1338,8 +1425,8 @@ class NineSolverGUI(QMainWindow):
                  if self.cloned_button_opacity_effect: # 再次检查是否为None
                     self.cloned_button_opacity_effect.setOpacity(1.0) 
 
-        if hasattr(self, 'settings_button') and not self.settings_button.isVisible():
-            self.settings_button.setVisible(True)
+        if hasattr(self, 'settings_button_opacity_effect'):
+            self.settings_button_opacity_effect.setOpacity(1.0)
         if hasattr(self, 'left_placeholder') and not self.left_placeholder.isVisible():
             self.left_placeholder.setVisible(True)
         
@@ -1366,16 +1453,16 @@ class NineSolverGUI(QMainWindow):
             except TypeError: pass
             self.input_field.returnPressed.connect(self.on_enter_pressed)
          
+    # 在 NineSolverGUI 类中
+
     def showEvent(self, event_obj: QEvent):
-        """窗口第一次显示时，应用完整的主题并强制使用激活样式。"""
         super().showEvent(event_obj) 
-        if not self._theme_initialized: # 使用你已有的标志位 _theme_initialized
-            print("showEvent: Applying initial theme (forcing active style).")
+        if not self._theme_initialized: 
             self.apply_theme_styling(self.current_theme, force_active_on_initial_show=True) 
-            #self._theme_initialized = True
         
-        # 使用 QTimer.singleShot 确保在当前事件处理完成后执行，此时布局更稳定
-        if hasattr(self, '_synchronize_cloned_button'): # 确保方法存在
+        # 确保在窗口显示后，克隆按钮的位置和样式是正确的
+        # 使用 QTimer.singleShot 确保布局已经稳定
+        if hasattr(self, '_synchronize_cloned_button'): 
              QTimer.singleShot(0, self._synchronize_cloned_button)
 
     # 在 NineSolverGUI 类中的 event 方法
@@ -1483,7 +1570,8 @@ class NineSolverGUI(QMainWindow):
         self.settings_page.update_theme_styling(self.current_theme, self.isActiveWindow())
 
     def init_ui(self):
-        self.main_central_widget = QWidget() 
+        self.main_central_widget = MainContentWidget()
+        self.main_central_widget.paintEventTriggered.connect(self._sync_clone_position_on_paint) # <-- 连接信号 
         self.setCentralWidget(self.main_central_widget) 
         main_layout = QVBoxLayout(self.main_central_widget)
         main_layout.setContentsMargins(20, 20, 20, 20)
@@ -1512,6 +1600,7 @@ class NineSolverGUI(QMainWindow):
         self.settings_button.setFlat(True) # <--- 新增：使按钮看起来更像一个图标
         self.settings_button.setCursor(Qt.CursorShape.PointingHandCursor) # <--- 新增：设置鼠标悬停手势
         self.settings_button.clicked.connect(self.toggle_settings_page)
+        self.settings_button.setGraphicsEffect(self.settings_button_opacity_effect)
 
         # 3. 构建顶部栏布局 (包含标题和设置按钮)
         top_bar_layout = QHBoxLayout()
