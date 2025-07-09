@@ -1,5 +1,6 @@
 # gui_main.py
 import sys
+from decimal import Decimal, getcontext
 from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
                              QLabel, QLineEdit, QPushButton, QTextEdit, QFrame, QSizePolicy, 
                              QSystemTrayIcon, QMenu, QGraphicsBlurEffect,QGraphicsOpacityEffect)
@@ -135,7 +136,7 @@ DARK_STYLESHEET_ACTIVE_BASE = """
     }
     QPushButton {
         background-color: #4682b4; /* 钢蓝色按钮 */
-        color: white; /* 文字保持白色 */
+        :color white; /* 文字保持白色 */
         border: none;
         padding: 8px 12px;
         border-radius: 4px;
@@ -1815,7 +1816,11 @@ class NineSolverGUI(QMainWindow):
                 raise ValueError("输入不能为空") 
 
             if 'e' in input_text.lower():
-                target_value = int(float(input_text)) 
+                # Set precision for Decimal. Default is 28, which is usually enough.
+                # For very large numbers like 1e100, you might need more.
+                # Let's set it to a sufficiently large value.
+                getcontext().prec = len(input_text.split('e')[0]) + int(input_text.split('e')[1]) + 5
+                target_value = int(Decimal(input_text))
             else:
                 target_value = int(input_text)
             
