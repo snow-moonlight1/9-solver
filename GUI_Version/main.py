@@ -9,13 +9,13 @@ import pyaudio
 import io
 import base64
 import threading
-from decimal import Decimal, getcontext
-getcontext().prec = 50
+import gmpy2
+from gmpy2 import mpz
 
 @dataclass
 class Expression:
     """表达式类，存储数值和对应的字符串表示"""
-    value: Decimal
+    value: mpz
     expr: str
     operators_used: set
     operator: Optional[str] = None
@@ -31,7 +31,7 @@ class Expression:
 class ImprovedNineExpressionFinder:
     def __init__(self):
         self._disable_divisions = False
-        self.base_numbers = {Decimal('9'), Decimal('99'), Decimal('999')}
+        self.base_numbers = {mpz('9'), mpz('99'), mpz('999')}
         from baka_sound import BAKA_DATA
         self.BAKA_DATA = BAKA_DATA
         self.large_number_threshold = 5000  # 大数阈值
@@ -40,7 +40,38 @@ class ImprovedNineExpressionFinder:
         self.max_line_length = 60  # 调整行长度
         # 将缓存中的表达式转换为符号形式
         self.expression_cache = {k: v.replace('9', '⑨') for k, v in self.expression_cache.items()}
+        # 为新的分解算法预先计算好构造块
+        self.greedy_blocks = self._precompute_greedy_blocks()
+
+    def _precompute_greedy_blocks(self) -> List[Tuple[mpz, str]]:
+        """预计算用于贪心分解的构造块，并按数值大小降序排列"""
+        blocks = []
         
+        # 基础数字
+        n_9, n_99, n_999 = mpz(9), mpz(99), mpz(999)
+        blocks.append((n_999, '⑨⑨⑨'))
+        blocks.append((n_99, '⑨⑨'))
+        blocks.append((n_9, '⑨'))
+        
+        # 平方
+        blocks.append((n_999 * n_999, '⑨⑨⑨*⑨⑨⑨'))
+        blocks.append((n_99 * n_99, '⑨⑨*⑨⑨'))
+        blocks.append((n_9 * n_9, '⑨*⑨'))
+
+        # 特殊的小数（用 mpz(3) 代表 √⑨）
+        blocks.append((mpz(8), '⑨-⑨/⑨'))
+        blocks.append((mpz(7), '⑨-√⑨+⑨/⑨'))
+        blocks.append((mpz(6), '⑨-√⑨'))
+        blocks.append((mpz(5), '⑨-√⑨-⑨/⑨'))
+        blocks.append((mpz(4), '√⑨+⑨/⑨'))
+        blocks.append((mpz(3), '√⑨'))
+        blocks.append((mpz(2), '(⑨+⑨)/⑨'))
+        blocks.append((mpz(1), '⑨/⑨'))
+        
+        # 按数值大小降序排序
+        blocks.sort(key=lambda item: item[0], reverse=True)
+        return blocks
+    
     def play_baka_sound(self):
         thread = threading.Thread(target=self._play_audio, daemon=True)
         thread.start()
@@ -121,15 +152,15 @@ class ImprovedNineExpressionFinder:
             score += 3
         return score
 
-    def _is_worth_exploring(self, value: float, target: int, visited: Set[float]) -> bool:
-        # 根据目标值动态调整允许的最大值
-        factor = 100 if abs(target) > 1000 else 10
-        max_allowed = max(abs(target) * factor, 10 ** 7)  # 调整倍数和基准值
+    def _is_worth_exploring(self, value: mpz, target: mpz, visited: Set[mpz]) -> bool:
+        # 使用gmpy2，理论上没有上限，但为了防止状态空间爆炸，仍然可以设置一个阈值
+        factor = 100
+        max_allowed = abs(target) * factor if target != 0 else mpz(10**7)
         if abs(value) > max_allowed:
             return False
-        if math.isinf(value) or math.isnan(value):
-            return False
-        if len(visited) > 100000:
+        
+        # 状态空间限制
+        if len(visited) > 100000: # 限制BFS的搜索广度
             return False
         return True
 
@@ -162,6 +193,7 @@ class ImprovedNineExpressionFinder:
 
     def _evaluate(self, exp1: Expression, exp2: Expression, operator: str) -> Optional[Expression]:
         try:
+            value = mpz(0)
             if operator == '+':
                 value = exp1.value + exp2.value
             elif operator == '-':
@@ -169,13 +201,12 @@ class ImprovedNineExpressionFinder:
             elif operator == '*':
                 value = exp1.value * exp2.value
             elif operator == '/':
-                if abs(exp2.value) < 1e-10 or not self._is_integer(exp1.value / exp2.value):
+                if exp2.value == 0: return None
+                # 使用gmpy2.is_divisible确保整除
+                if not gmpy2.is_divisible(exp1.value, exp2.value):
                     return None
-                value = exp1.value / exp2.value
+                value = exp1.value // exp2.value # 使用整数除法
             else:
-                return None
-
-            if abs(value) > 1e6:
                 return None
 
             exp1_str = self._format_operand(exp1, operator)
@@ -188,154 +219,133 @@ class ImprovedNineExpressionFinder:
         except:
             return None
 
-    def _decompose_large_number(self, target: int) -> Optional[str]:
-        """根据数字大小动态选择分解策略"""
-        # 负数处理分支
+    def _decompose_large_number(self, target: mpz) -> Optional[str]:
+        """
+        使用基于gmpy2的贪心算法快速分解大数。
+        这个函数会递归调用，并返回一个部分表达式列表。
+        """
         if target < 0:
-            positive_expr = self._decompose_large_number(-target)
-            if positive_expr:
-                return f"-({positive_expr})"
+            # 处理负数
+            decomposed_positive = self._decompose_large_number_recursive_parts(-target)
+            if decomposed_positive:
+                return f"-({self._format_decomposed_parts(decomposed_positive)})"
             return None
 
-        # 对于较小的数字，尝试使用更简单的组合
-        if target < 1000:
-            # 尝试用99和9的组合
-            for base in [99, 9]:
-                quotient = target // base
-                remainder = target % base
-                if quotient > 0:
-                    # 对于较大的商，继续尝试分解
-                    if quotient > 100:
-                        quotient_expr = self._decompose_large_number(quotient)
-                    else:
-                        quotient_expr = self._find_expression_with_timeout(quotient, timeout_ms=300)
-                    if quotient_expr:
-                        if remainder == 0:
-                            return f"{base}*({quotient_expr})"
-                        remainder_expr = self._find_expression_with_timeout(remainder, timeout_ms=300)
-                        if remainder_expr:
-                            return f"{base}*({quotient_expr})+({remainder_expr})"
-            return None
-
-        # 对于中等大小的数字，优先尝试99和9的组合
-        if target < self.large_number_threshold:
-            # 先尝试99
-            quotient = target // 99
-            remainder = target % 99
-            if quotient > 0:
-                # 对于较大的商，继续尝试分解
-                if quotient > 100:
-                    quotient_expr = self._decompose_large_number(quotient)
-                else:
-                    quotient_expr = self._find_expression_with_timeout(quotient, timeout_ms=300)
-                if quotient_expr:
-                    if remainder == 0:
-                        return f"99*({quotient_expr})"
-                    remainder_expr = self._find_expression_with_timeout(remainder, timeout_ms=300)
-                    if remainder_expr:
-                        return f"99*({quotient_expr})+({remainder_expr})"
-            
-            # 再尝试9
-            quotient = target // 9
-            remainder = target % 9
-            if quotient > 0:
-                # 对于较大的商，继续尝试分解
-                if quotient > 100:
-                    quotient_expr = self._decompose_large_number(quotient)
-                else:
-                    quotient_expr = self._find_expression_with_timeout(quotient, timeout_ms=300)
-                if quotient_expr:
-                    if remainder == 0:
-                        return f"9*({quotient_expr})"
-                    remainder_expr = self._find_expression_with_timeout(remainder, timeout_ms=300)
-                    if remainder_expr:
-                        return f"9*({quotient_expr})+({remainder_expr})"
-
-        # 对于大数，优先使用999
-        quotient = target // 999
-        remainder = target % 999
-        if quotient > 0:
-            # 对于较大的商，继续尝试分解
-            if quotient > 100:
-                quotient_expr = self._decompose_large_number(quotient)
-            else:
-                quotient_expr = self._find_expression_with_timeout(quotient, timeout_ms=300)
-            if quotient_expr:
-                if remainder == 0:
-                    return f"999*({quotient_expr})"
-                remainder_expr = self._find_expression_with_timeout(remainder, timeout_ms=300)
-                if remainder_expr:
-                    return f"999*({quotient_expr})+({remainder_expr})"
-        
-        # 如果所有尝试都失败，返回None
+        # 对于正数，直接调用并格式化
+        parts = self._decompose_large_number_recursive_parts(target)
+        if parts:
+            return self._format_decomposed_parts(parts)
         return None
 
-    def _find_expression_with_timeout(self, target: int, timeout_ms: int = 1000) -> Optional[str]:
-        # 对于大数绝对值直接使用分解策略
-        if abs(target) > 5000:
-            return self._decompose_large_number(target)
-        # 首先尝试启发式搜索
-        # 数学约束预判
-        self._disable_divisions = False
-        if target % 9 != 0:  # 不能被9整除时禁用除以9的操作
-            self._disable_divisions = True
-        start_time = time.time()
+    def _decompose_large_number_recursive_parts(self, target: mpz) -> List[str]:
+        """递归分解的核心，返回一个字符串列表，如 ['999*999', '+', '9*9']"""
+        if target == 0:
+            return []
 
-        if target in self.expression_cache:
-            return self.expression_cache[target]
+        # 优先从预计算的构造块中查找
+        for value, expr_str in self.greedy_blocks:
+            if target == value:
+                return [expr_str]
+        
+        # 贪心算法：尝试用最大的构造块去除
+        for value, expr_str in self.greedy_blocks:
+            if value <= target:
+                # 尝试整除
+                quotient, remainder = gmpy2.f_divmod(target, value)
+                if quotient > 0:
+                    # 分解商
+                    quotient_parts = self._decompose_large_number_recursive_parts(quotient)
+                    if not quotient_parts: # 如果商无法分解，此路不通
+                        continue
+                    
+                    # 组合结果
+                    result_parts = []
+                    if len(quotient_parts) == 1 and quotient_parts[0] == '⑨/⑨': # 商为1，则省略 "1*"
+                        result_parts.append(expr_str)
+                    else:
+                        result_parts.extend([expr_str, '*', f"({self._format_decomposed_parts(quotient_parts)})"])
+                    
+                    # 如果有余数，继续分解余数
+                    if remainder > 0:
+                        remainder_parts = self._decompose_large_number_recursive_parts(remainder)
+                        if not remainder_parts: # 余数无法分解
+                            continue
+                        result_parts.append('+')
+                        result_parts.extend(remainder_parts)
+                    
+                    return result_parts
+        
+        # 如果所有尝试都失败
+        return []
 
-        queue: List[Tuple[float, Expression]] = []
-        visited: Set[float] = set()
+    def _format_decomposed_parts(self, parts: List[str]) -> str:
+        """将分解后的部分列表格式化为最终的字符串表达式。"""
+        # 简单地用空格连接所有部分
+        return " ".join(parts)
 
-        for num in self.base_numbers:
-            expr_str = str(num).replace('9', '⑨')  # 替换基础数字为符号
-            exp = Expression(float(num), str(num), set(), None)
-            queue.append((self._estimate_distance(exp.value, target), exp))
-            visited.add(exp.value)
+    def _find_expression_with_timeout(self, target_int: int, timeout_ms: int = 900) -> Optional[str]:
+        target = mpz(target_int) # 将输入转换为gmpy2的mpz类型
 
-        while queue and (time.time() - start_time) * 1000 < timeout_ms:
+        # 1. 检查缓存
+        if target_int in self.expression_cache:
+            return self.expression_cache[target_int]
+
+        # 2. 对于较小的数，优先使用BFS/A*搜索
+        if abs(target) < self.large_number_threshold:
+            self._disable_divisions = (target % 9 != 0)
+            start_time = time.time()
+            
+            # (这里的BFS逻辑基本不变，但需要确保它使用mpz类型)
+            queue: List[Tuple[mpz, Expression]] = []
+            visited: Set[mpz] = set()
+
+            for num in self.base_numbers:
+                expr_str = str(num)
+                exp = Expression(num, expr_str, set(), None)
+                # 估算距离时转为float，因为距离不需要绝对精度
+                distance = abs(float(exp.value - target))
+                queue.append((distance, exp))
+                visited.add(exp.value)
+
             import heapq
-            # 使用堆结构优化优先级队列
             heapq.heapify(queue)
-            current_priority, current_exp = heapq.heappop(queue)
 
-            if self._is_integer(current_exp.value) and round(current_exp.value) == target:
-                result = self._simplify_expression(current_exp.expr)
-                self.expression_cache[target] = result
-                return result
+            while queue and (time.time() - start_time) * 1000 < timeout_ms:
+                current_priority, current_exp = heapq.heappop(queue)
 
-            # 动态获取运算符列表
-            operators = self._get_operators(target)
-            # 保留随机性但保持优先级
-            random.shuffle(operators)
-            # 将高优先级运算符移到前面
-            for op in ['*', '+']:
-                if op in operators:
-                    operators.remove(op)
-                    operators.insert(0, op)
+                if current_exp.value == target:
+                    result = self._simplify_expression(current_exp.expr)
+                    self.expression_cache[target_int] = result
+                    return result
 
-            for base_num in self.base_numbers:
-                base_exp = Expression(float(base_num), str(base_num), set(), None)
+                operators = self._get_operators(target_int)
+                random.shuffle(operators)
 
-                for op in operators:
-                    result = self._evaluate(current_exp, base_exp, op)
-                    if result and result.value not in visited and self._is_worth_exploring(result.value, target,
-                                                                                           visited):
-                        queue.append((self._estimate_distance(result.value, target), result))
-                        visited.add(result.value)
+                for base_num in self.base_numbers:
+                    base_exp = Expression(base_num, str(base_num), set(), None)
+                    for op in operators:
+                        # 正向计算
+                        result = self._evaluate(current_exp, base_exp, op)
+                        if result and result.value not in visited and self._is_worth_exploring(result.value, target, visited):
+                            distance = abs(float(result.value - target))
+                            heapq.heappush(queue, (distance, result))
+                            visited.add(result.value)
+                        
+                        # 反向计算
+                        if op in {'-', '/'}:
+                            reverse_result = self._evaluate(base_exp, current_exp, op)
+                            if reverse_result and reverse_result.value not in visited and self._is_worth_exploring(reverse_result.value, target, visited):
+                                distance = abs(float(reverse_result.value - target))
+                                heapq.heappush(queue, (distance, reverse_result))
+                                visited.add(reverse_result.value)
 
-                    if op in {'-', '/'}:
-                        reverse_result = self._evaluate(base_exp, current_exp, op)
-                        if reverse_result and reverse_result.value not in visited and self._is_worth_exploring(
-                                reverse_result.value, target, visited):
-                            queue.append((self._estimate_distance(reverse_result.value, target), reverse_result))
-                            visited.add(reverse_result.value)
-
-        # 如果启发式搜索失败，尝试大数分解
+        # 3. 如果BFS超时或目标数过大，则使用新的贪心分解算法
         large_number_expr = self._decompose_large_number(target)
         if large_number_expr:
+            self.expression_cache[target_int] = large_number_expr
             return large_number_expr
-            
+        
+        # 所有方法都失败
         return None
 
     def _find_best_split_pos(self, tokens: list) -> int:
@@ -416,6 +426,8 @@ class ImprovedNineExpressionFinder:
     def find_expression(self, target: int) -> str:
         result = self._find_expression_with_timeout(target)
         if result:
-            # 如果原始表达式存在，转换为符号形式
-            symbol_result = result.replace('9', '⑨')
+            # 最终结果进行符号替换
+            symbol_result = result.replace('999', '⑨⑨⑨').replace('99', '⑨⑨').replace('9', '⑨').replace('3', '√⑨')
+            # 你可以在这里添加更多的替换规则，如果需要的话
             return symbol_result
+        return ""
