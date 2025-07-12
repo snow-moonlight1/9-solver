@@ -56,8 +56,8 @@
 - **精确的数值计算**: 保证计算结果的高精度
 
 - **跨平台兼容性**: 核心计算逻辑独立于平台，易于集成到不同应用中
-  
-  ## 版本说明
+
+## 版本说明
 
 | 版本   | 路径                        | 状态  | 推荐指数  |
 | ---- | ------------------------- | --- | ----- |
@@ -161,7 +161,18 @@ baka~
 ## 特别致谢
 
 - [homo数字论证器(github仓库)](https://github.com/itorr/homo) 
+- [Gemini](https://aistudio.google.com/prompts/new_chat)
 - FinaleDreamilyNeko
+
+## 技术指导
+
+- Gemini
+
+- ChatGPT
+
+- Claude
+
+- DeepSeek
 
 ## 相关链接
 
