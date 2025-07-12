@@ -31,7 +31,13 @@ class Expression:
 class ImprovedNineExpressionFinder:
     def __init__(self):
         self._disable_divisions = False
-        self.base_numbers = {mpz('9'), mpz('99'), mpz('999')}
+        self.base_number_map = {
+            mpz(9): '⑨',
+            mpz(99): '⑨⑨',
+            mpz(999): '⑨⑨⑨',
+            mpz(3): '√⑨'
+        }
+        self.base_numbers = set(self.base_number_map.keys())
         from baka_sound import BAKA_DATA
         self.BAKA_DATA = BAKA_DATA
         self.large_number_threshold = 5000  # 大数阈值
@@ -280,8 +286,8 @@ class ImprovedNineExpressionFinder:
 
     def _format_decomposed_parts(self, parts: List[str]) -> str:
         """将分解后的部分列表格式化为最终的字符串表达式。"""
-        # 简单地用空格连接所有部分
-        return " ".join(parts)
+        # 将部分连接起来，不加多余的空格
+        return "".join(parts)
 
     def _find_expression_with_timeout(self, target_int: int, timeout_ms: int = 900) -> Optional[str]:
         target = mpz(target_int) # 将输入转换为gmpy2的mpz类型
@@ -299,8 +305,7 @@ class ImprovedNineExpressionFinder:
             queue: List[Tuple[mpz, Expression]] = []
             visited: Set[mpz] = set()
 
-            for num in self.base_numbers:
-                expr_str = str(num)
+            for num, expr_str in self.base_number_map.items():
                 exp = Expression(num, expr_str, set(), None)
                 # 估算距离时转为float，因为距离不需要绝对精度
                 distance = abs(float(exp.value - target))
@@ -321,8 +326,8 @@ class ImprovedNineExpressionFinder:
                 operators = self._get_operators(target_int)
                 random.shuffle(operators)
 
-                for base_num in self.base_numbers:
-                    base_exp = Expression(base_num, str(base_num), set(), None)
+                for base_num, base_expr_str in self.base_number_map.items():
+                    base_exp = Expression(base_num, base_expr_str, set(), None)
                     for op in operators:
                         # 正向计算
                         result = self._evaluate(current_exp, base_exp, op)
@@ -368,7 +373,7 @@ class ImprovedNineExpressionFinder:
             return expr
 
         # 改进的正则表达式，正确识别所有运算符和数字
-        tokens = re.findall(r'(\d+|\(|\)|\+|\-|\*|\/|\⑨\s*)', expr)
+        tokens = re.findall(r'(√⑨|⑨{1,3}|\d+|\(|\)|\+|\-|\*|\/)', expr)
         tokens = [t for t in tokens if t.strip()]
         lines = []
         current_line = []
@@ -426,8 +431,5 @@ class ImprovedNineExpressionFinder:
     def find_expression(self, target: int) -> str:
         result = self._find_expression_with_timeout(target)
         if result:
-            # 最终结果进行符号替换
-            symbol_result = result.replace('999', '⑨⑨⑨').replace('99', '⑨⑨').replace('9', '⑨').replace('3', '√⑨')
-            # 你可以在这里添加更多的替换规则，如果需要的话
-            return symbol_result
+            return result
         return ""
