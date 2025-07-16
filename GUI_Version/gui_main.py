@@ -3,7 +3,7 @@ import sys
 from decimal import Decimal, getcontext
 from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
                              QLabel, QLineEdit, QPushButton, QTextEdit, QFrame, QSizePolicy, 
-                             QSystemTrayIcon, QMenu, QGraphicsBlurEffect,QGraphicsOpacityEffect)
+                             QMenu, QGraphicsBlurEffect, QGraphicsOpacityEffect)
 from PyQt6.QtCore import Qt, QThread, pyqtSignal, QPropertyAnimation, QEasingCurve, QSequentialAnimationGroup, QEvent, QRect, QParallelAnimationGroup, QSize, QTimer, QPoint, QAbstractAnimation 
 from PyQt6.QtGui import QFont, QIcon, QColor, QPixmap, QPalette, QImage, QTextCursor, QPaintEvent, QScreen, QMouseEvent, QResizeEvent
 
@@ -962,13 +962,9 @@ class NineSolverGUI(QMainWindow):
         except Exception as e:
             print(f"Error loading Fumo pixmap: {e}")
 
-        # 初始化系统托盘
-        self.tray_icon = QSystemTrayIcon(self)
-        self.ICON_DATA = ICON_DATA 
-
-        # 新增：存储所有成功计算的结果
+        self.ICON_DATA = ICON_DATA
+        # 存储所有成功计算的结果
         self.historical_results = []
-        self.tray_icon.setIcon(QIcon(QPixmap.fromImage(QImage.fromData(base64.b64decode(self.ICON_DATA)))))
         
         # 新增：预加载设置图标
         self.setting_icon_light = QIcon(QPixmap.fromImage(QImage.fromData(base64.b64decode(SETTING_GREY))))
@@ -1012,16 +1008,7 @@ class NineSolverGUI(QMainWindow):
         self.settings_page.baka_audio_setting_changed.connect(self.on_baka_audio_setting_changed) # <--- 连接baka信号
 
 
-        # 创建托盘菜单
-        tray_menu = QMenu()
-        show_action = tray_menu.addAction("显示   ")
-        show_action.triggered.connect(self.show_normal)
-        quit_action = tray_menu.addAction("退出   ")
-        quit_action.triggered.connect(QApplication.instance().quit)
-        self.tray_icon.setContextMenu(tray_menu)
-        
-        # 连接托盘图标点击事件
-        self.tray_icon.activated.connect(self.on_tray_icon_activated)
+
         self.setWindowTitle("⑨")
         self.setMinimumSize(800, 600)
         
@@ -1941,20 +1928,10 @@ class NineSolverGUI(QMainWindow):
         self.result_display.ensureCursorVisible()
     
     def closeEvent(self, event):
-        # 重写关闭事件，最小化到托盘
-        self.hide()
-        self.tray_icon.show()
-        event.ignore()
+        # 直接关闭程序
+        event.accept()
         
-    def show_normal(self):
-        # 从托盘恢复窗口
-        self.show()
-        self.tray_icon.hide()
-        
-    def on_tray_icon_activated(self, reason):
-        # 处理托盘图标点击事件
-        if reason == QSystemTrayIcon.ActivationReason.Trigger:
-            self.show_normal()
+
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)

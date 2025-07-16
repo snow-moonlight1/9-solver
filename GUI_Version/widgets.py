@@ -1,7 +1,7 @@
 # widgets.py
 from PyQt6.QtWidgets import QAbstractButton
 from PyQt6.QtCore import (Qt, pyqtSignal, QPropertyAnimation, QEasingCurve, 
-                          QSize, QRectF, QVariant, pyqtProperty) # <--- Use pyqtProperty directly
+                          QSize, QRectF, QVariant, pyqtProperty) 
 from PyQt6.QtGui import QPainter, QBrush, QColor, QPaintEvent, QMouseEvent, QPen, QPainterPath
 
 class CustomSwitch(QAbstractButton):
@@ -13,10 +13,11 @@ class CustomSwitch(QAbstractButton):
         super().__init__(parent)
         self.setCheckable(True)
 
-        self._height = 22 
+        self._height = 22
         self._slider_diameter = self._height - 4
         self._track_radius = self._height / 2
         self._track_width = self._height * 1.8
+        self._margin = 2  # Add a margin to prevent clipping on the sides
 
         self._bg_color_off = QColor("#bdc3c7") 
         self._bg_color_on = QColor("#a4c7f4")  
@@ -27,8 +28,8 @@ class CustomSwitch(QAbstractButton):
 
         # QPropertyAnimation targets the Qt property "sliderOffsetAnim"
         self.animation = QPropertyAnimation(self, b"sliderOffsetAnim") 
-        self.animation.setDuration(300) 
-        self.animation.setEasingCurve(QEasingCurve.Type.InOutCubic)
+        self.animation.setDuration(350)  # 稍微延长动画时间以更好地展示缓动效果
+        self.animation.setEasingCurve(QEasingCurve.Type.OutBack)  # 使用OutBack缓动，产生弹性回弹效果
 
         self.toggled.connect(self._trigger_animation_on_toggle)
 
@@ -98,7 +99,10 @@ class CustomSwitch(QAbstractButton):
         # print(f"Paint event, _internal_slider_offset: {self._internal_slider_offset}")
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-        painter.setPen(Qt.PenStyle.NoPen) 
+        painter.setPen(Qt.PenStyle.NoPen)
+
+        # Translate the painter to account for the margin
+        painter.translate(self._margin, 0)
 
         track_rect = QRectF(0, 0, self._track_width, self._height)
         
@@ -141,7 +145,8 @@ class CustomSwitch(QAbstractButton):
         painter.drawEllipse(slider_rect)
 
     def sizeHint(self):
-        return QSize(int(self._track_width), self._height)
+        # Add margin to the width to ensure the shadow is not clipped
+        return QSize(int(self._track_width + 2 * self._margin), self._height)
 
     def minimumSizeHint(self):
         return self.sizeHint()
