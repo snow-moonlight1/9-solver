@@ -1689,8 +1689,13 @@ class NineSolverGUI(QMainWindow):
             'target': target_str,
             'expr': expr_str,
             'elapsed': elapsed,
-            'type': 'success' if expr_str else 'not_found' 
+            'type': 'success' if expr_str else 'not_found'
         }
+        
+        # 检查是否有噪声剔除信息需要显示
+        if hasattr(self, '_current_noise_info'):
+            new_result_entry['noise_info'] = self._current_noise_info
+            delattr(self, '_current_noise_info')  # 清除临时信息
 
         if self.accumulate_results:
             self.historical_results.append(new_result_entry)
@@ -1749,6 +1754,40 @@ class NineSolverGUI(QMainWindow):
         if hasattr(self, 'calculate_btn') and not self.calculate_btn.isEnabled():
             self.calculate_btn.setEnabled(True)    
     
+    def _filter_and_parse_input(self, raw_input: str) -> tuple:
+        """从混合字符中提取数字和运算符，计算结果并返回原始表达式和计算结果"""
+        import re
+        
+        # 保留数字、运算符和小数点
+        filtered = re.sub(r'[^0-9+\-*/.]', '', raw_input)
+        
+        if not filtered:
+            raise ValueError("输入中没有有效的数字或运算符")
+        
+        # 处理连续的运算符，保留最后一个
+        filtered = re.sub(r'[+\-*/]{2,}', lambda m: m.group()[-1], filtered)
+        
+        # 移除开头和结尾的运算符（除了负号）
+        if filtered and filtered[0] in '+*/':
+            filtered = filtered[1:]
+        if filtered and filtered[-1] in '+-*/':
+            filtered = filtered[:-1]
+            
+        if not filtered:
+            raise ValueError("过滤后没有有效内容")
+        
+        try:
+            # 安全计算表达式
+            result = eval(filtered)
+            return filtered, result
+        except:
+            # 如果表达式无效，尝试提取第一个数字
+            numbers = re.findall(r'\d+(?:\.\d+)?', filtered)
+            if numbers:
+                return numbers[0], float(numbers[0])
+            else:
+                raise ValueError("无法解析有效的数学表达式")
+    
     def start_calculation(self):
         # 不再单独管理 _last_target 等，它们会作为新条目进入 historical_results
         
@@ -1765,7 +1804,25 @@ class NineSolverGUI(QMainWindow):
             if not input_text: 
                 raise ValueError("输入不能为空") 
 
-            if 'e' in input_text.lower():
+            # 新增：噪声剔除和表达式解析
+            if any(c.isalpha() for c in input_text) or any(c in '!@#$%^&()[]{}|\\:;"<>?,~`' for c in input_text):
+                # 包含字母或特殊字符，需要过滤
+                filtered_expr, calculated_result = self._filter_and_parse_input(input_text)
+                
+                # 保存噪声剔除信息供show_result使用
+                self._current_noise_info = {
+                    'original_input': input_text,
+                    'filtered_expr': filtered_expr,
+                    'calculated_result': calculated_result
+                }
+                
+                # 显示过滤和计算过程
+                process_info = f"原始输入: {input_text}\n提取表达式: {filtered_expr}\n计算结果: {calculated_result}"
+                print(process_info)
+                
+                # 使用计算结果作为目标值
+                target_value = int(calculated_result)
+            elif 'e' in input_text.lower():
                 # Set precision for Decimal. Default is 28, which is usually enough.
                 # For very large numbers like 1e100, you might need more.
                 # Let's set it to a sufficiently large value.
@@ -1889,8 +1946,20 @@ class NineSolverGUI(QMainWindow):
                 elapsed = entry.get('elapsed', 0.0)
 
                 if expr_str: # 成功找到表达式
+                    # 检查是否有噪声剔除信息
+                    noise_info_html = ""
+                    if 'noise_info' in entry:
+                        noise_info = entry['noise_info']
+                        noise_info_html = f"""
+                        <p style="color: {time_color}; font-style: italic;">噪声剔除过程:</p>
+                        <p style="color: {time_color}; font-size: 12px;">原始输入: {noise_info['original_input']}</p>
+                        <p style="color: {time_color}; font-size: 12px;">提取表达式: {noise_info['filtered_expr']}</p>
+                        <p style="color: {time_color}; font-size: 12px;">计算结果: {noise_info['calculated_result']}</p>
+                        """
+                    
                     entry_inner_html = f"""
                         <p>目标: <span style="font-weight: bold;">{target_str}</span></p>
+                        {noise_info_html}
                         <p>结果 (<span style="color: {time_color};">{elapsed:.2f}秒</span>):</p>
                         <p><span style="font-weight: bold;">{target_str}</span> = <span style="color: {expr_html_color};">{expr_str}</span></p>
                         <p style="color: {baka_color}; font-weight: bold;">baka~<br><br><br></p>
